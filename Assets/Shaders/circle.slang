@@ -18,7 +18,7 @@ void imageMain(uint3 threadId : SV_DispatchThreadID)
     float r = length(p)*0.75;
     vec2 uv = vec2(a/tau,r);
 
-    float time = _Time.x;
+    float time = _Time.y;
 
     //get the color
     float xCol = (uv.x - time/3) * 3.0;
