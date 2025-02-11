@@ -1,11 +1,9 @@
-using NUnit.Framework;
 using System.Diagnostics;
 using System.IO;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
-using System;
 
 public class SlangUWindow : EditorWindow
 {
@@ -129,11 +127,14 @@ public class SlangUWindow : EditorWindow
                     {
                         UnityEngine.Debug.LogError(error);
                     }
-                    else
+                    else // success
                     {
-                        // success
+                        // Use StringBuilder?
+
                         var appendline = "#pragma kernel " + kernelname + "\r\n\r\n";
                         InsertTextAtBeginning(outputPath, appendline);
+
+                        CBufferReplace(outputPath);
 
                         UnityEngine.Debug.Log("Saved : " + outputPath);
 
@@ -147,10 +148,48 @@ public class SlangUWindow : EditorWindow
             }
         }
     }
+
     public static void InsertTextAtBeginning(string filePath, string textToInsert)
     {
         string originalContent = File.ReadAllText(filePath);
         string newContent = textToInsert + originalContent;
         File.WriteAllText(filePath, newContent);
+    }
+
+    public static void CBufferReplace(string filePath)
+    {
+        string text = File.ReadAllText(filePath);
+        string pattern = @"(cbuffer\s+globalParams_\d\s*:\s*register\(b\d\)\s*\{.*?\})";
+
+        // Disable cbuffer blocks
+        string replacedText = Regex.Replace(
+            text,
+            pattern,
+            m =>
+            {
+                string commentedBlock = Regex.Replace(m.Groups[1].Value, @"^", "// ", RegexOptions.Multiline);
+                return commentedBlock;
+            },
+            RegexOptions.Singleline
+        );
+
+        // Remove  globalParams_ prefix
+        replacedText = Regex.Replace(replacedText, @"globalParams_\d\.", "");
+
+        Regex regex = new Regex(@"struct\s+GlobalParams_\d\s*\{.*?\};", RegexOptions.Singleline);
+        var matches = regex.Matches(replacedText);
+        if (matches.Count > 0)
+        {
+            foreach (Match match in matches)
+            {
+                var str = match.ToString();
+                str = str.Replace("struct", "// struct");
+                str = str.Replace("{", "// {");
+                str = str.Replace("};", "// };");
+                replacedText = replacedText.Replace(match.ToString(), str);
+            }
+        }
+
+        File.WriteAllText(filePath, replacedText);
     }
 }
