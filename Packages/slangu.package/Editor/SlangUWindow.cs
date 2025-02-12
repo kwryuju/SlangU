@@ -18,6 +18,12 @@ public class SlangUWindow : EditorWindow
     private string kernelname = "";
     private bool bLoadSuccess = false;
 
+    private string[] ShaderModels =
+    { "sm_4_0", "sm_4_1", "sm_5_0", "sm_5_1", "sm_6_0", "sm_6_1", "sm_6_2", "sm_6_3", "sm_6_4", "sm_6_5", "sm_6_6" };
+    private int shaderModelIndex = 9;
+    private bool UseDXC() { return shaderModelIndex > 3; }
+
+
     [MenuItem("SlangU/SlangU")]
     private static void SlangU()
     {
@@ -85,7 +91,16 @@ public class SlangUWindow : EditorWindow
         }
 
         EditorGUILayout.LabelField("input slang:", filePath);
-        entryPointIndex = EditorGUILayout.Popup("Entry Point", entryPointIndex, entryPointList.ToArray());
+
+        var idx = EditorGUILayout.Popup("Entry Point", entryPointIndex, entryPointList.ToArray());
+        if (idx != entryPointIndex)
+        {
+            entryPointIndex = idx;
+            kernelname = entryPointList[entryPointIndex];
+            outputname = Path.GetFileNameWithoutExtension(filePath) + "_" + kernelname + ".compute";
+        }
+
+        shaderModelIndex = EditorGUILayout.Popup("Shader Model", shaderModelIndex, ShaderModels);
         outputname = EditorGUILayout.TextField("Output file name:", outputname);
         bUseVulkanSDK = EditorGUILayout.Toggle("Use slangc in Vulkan SDK:", bUseVulkanSDK);
 
@@ -106,7 +121,8 @@ public class SlangUWindow : EditorWindow
             ProcessStartInfo startInfo = new ProcessStartInfo
             {
                 FileName = "slangc.exe",
-                Arguments = string.Format("{0} -entry {1} -target hlsl -o {2}", filePath, kernelname, outputPath),
+                Arguments = string.Format("{0} -entry {1} -target hlsl -profile {2} -o {3}",
+                                          filePath, kernelname, ShaderModels[shaderModelIndex], outputPath),
                 CreateNoWindow = true,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
@@ -117,7 +133,6 @@ public class SlangUWindow : EditorWindow
             {
                 using (Process process = Process.Start(startInfo))
                 {
-                    // コマンドの出力を読み取る
                     string output = process.StandardOutput.ReadToEnd();
                     string error = process.StandardError.ReadToEnd();
 
@@ -133,6 +148,12 @@ public class SlangUWindow : EditorWindow
 
                         var appendline = "#pragma kernel " + kernelname + "\r\n\r\n";
                         InsertTextAtBeginning(outputPath, appendline);
+
+                        if(UseDXC())
+                        {
+                            appendline = "#pragma use_dxc\r\n\r\n";
+                            InsertTextAtBeginning(outputPath, appendline);
+                        }
 
                         CBufferReplace(outputPath);
 
@@ -176,6 +197,10 @@ public class SlangUWindow : EditorWindow
         // Remove  globalParams_ prefix
         replacedText = Regex.Replace(replacedText, @"globalParams_\d\.", "");
 
+        // Remove  #line preprocessor for now
+        replacedText = Regex.Replace(replacedText, @"#line", "// #line");
+
+        // Remove GlobalParams struct
         Regex regex = new Regex(@"struct\s+GlobalParams_\d\s*\{.*?\};", RegexOptions.Singleline);
         var matches = regex.Matches(replacedText);
         if (matches.Count > 0)
