@@ -1,0 +1,38 @@
+#pragma use_dxc
+
+#pragma kernel clearDerivativesMain
+
+#pragma pack_matrix(column_major)
+#ifdef SLANG_HLSL_ENABLE_NVAPI
+#include "nvHLSLExtns.h"
+#endif
+
+#ifndef __DXC_VERSION_MAJOR
+    // warning X3557: loop doesn't seem to do anything, forcing loop to unroll
+    #pragma warning(disable: 3557)
+#endif
+
+
+// #line 54 "D:/Programs/SlangU/Assets/Shaders/differentiable2dsplatter.slang"
+RWStructuredBuffer<uint > derivBuffer_0 : register(u1);
+
+
+// #line 866
+[shader("compute")][numthreads(64, 1, 1)]
+void clearDerivativesMain(uint2 dispatchThreadID_0 : SV_DispatchThreadID)
+{
+
+// #line 868
+    uint _S1 = dispatchThreadID_0.x;
+
+// #line 868
+    if(int(_S1) >= int(184320))
+    {
+
+// #line 869
+        return;
+    }
+    derivBuffer_0[_S1] = asuint(0.0);
+    return;
+}
+

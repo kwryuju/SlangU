@@ -1,0 +1,1010 @@
+#pragma use_dxc
+
+#pragma kernel imageMain
+
+#pragma pack_matrix(column_major)
+#ifdef SLANG_HLSL_ENABLE_NVAPI
+#include "nvHLSLExtns.h"
+#endif
+
+#ifndef __DXC_VERSION_MAJOR
+    // warning X3557: loop doesn't seem to do anything, forcing loop to unroll
+    #pragma warning(disable: 3557)
+#endif
+
+
+// #line 63 "D:/Programs/SlangU/Assets/Shaders/differentiable2dsplatter.slang"
+Texture2D<float4 > targetTexture_0 : register(t0);
+
+
+// #line 51
+RWStructuredBuffer<float > blobsBuffer_0 : register(u0);
+
+
+// #line 955
+RWTexture2D<float4 > result_0 : register(u4);
+
+
+// #line 962
+// struct GlobalParams_0
+// {
+    float4 U_ScreenSize_0;
+// };
+
+
+// #line 962
+// cbuffer globalParams_0 : register(b0)
+// {
+//     GlobalParams_0 globalParams_0;
+// }
+
+// #line 726
+float2 calcUV_0(uint2 dispatchThreadID_0, int2 renderSize_0, int2 imageSize_0)
+{
+
+    if(all(renderSize_0 == imageSize_0))
+    {
+
+// #line 730
+        return float2(dispatchThreadID_0) / float2(renderSize_0);
+    }
+    float _S1 = float(renderSize_0.x);
+
+// #line 732
+    float _S2 = float(renderSize_0.y);
+
+// #line 732
+    float aspectRatioRT_0 = _S1 / _S2;
+    float aspectRatioTEX_0 = float(imageSize_0.x) / float(imageSize_0.y);
+
+    if(aspectRatioRT_0 > aspectRatioTEX_0)
+    {
+
+// #line 746
+        return float2(float(dispatchThreadID_0.x) / _S1, float(dispatchThreadID_0.y) * aspectRatioTEX_0 / _S1 + (1.0 - aspectRatioTEX_0 / aspectRatioRT_0) / 2.0);
+    }
+    else
+    {
+
+// #line 759
+        return float2(float(dispatchThreadID_0.x) / (_S2 * aspectRatioTEX_0) + (1.0 - aspectRatioRT_0 / aspectRatioTEX_0) / 2.0, float(dispatchThreadID_0.y) / _S2);
+    }
+
+// #line 759
+}
+
+
+// #line 118
+struct OBB_0
+{
+    float2 center_0;
+    float2x2 rotation_0;
+    float2 scale_0;
+};
+
+
+// #line 184
+OBB_0 OBB_x24init_0(float2 center_1, float2x2 rotation_1, float2 scale_1)
+{
+
+// #line 184
+    OBB_0 _S3;
+
+    _S3.center_0 = center_1;
+    _S3.rotation_0 = rotation_1;
+    _S3.scale_0 = scale_1;
+
+// #line 184
+    return _S3;
+}
+
+
+// #line 82
+static groupshared uint blobCount_0;
+
+
+// #line 76
+static groupshared uint blobCountAT_0;
+
+
+// #line 106
+struct InitializedShortList_0
+{
+    int _dummy_0;
+};
+
+
+// #line 710
+InitializedShortList_0 initShortList_0(uint2 dispatchThreadID_1)
+{
+    GroupMemoryBarrierWithGroupSync();
+
+// #line 712
+    bool _S4;
+
+    if(int(dispatchThreadID_1.x) % int(16) == int(0))
+    {
+
+// #line 714
+        _S4 = int(dispatchThreadID_1.y) % int(16) == int(0);
+
+// #line 714
+    }
+    else
+    {
+
+// #line 714
+        _S4 = false;
+
+// #line 714
+    }
+
+// #line 714
+    if(_S4)
+    {
+        blobCount_0 = 0U;
+
+// #line 716
+        blobCountAT_0 = 0U;
+
+// #line 714
+    }
+
+// #line 719
+    InitializedShortList_0 _S5 = { int(0) };
+
+// #line 719
+    return _S5;
+}
+
+
+// #line 459
+uint Gaussian2D_count_0()
+{
+
+    return 20480U;
+}
+
+
+// #line 319
+float loadFloat_0(uint idx_0, uint localDispatchIdx_0)
+{
+    return blobsBuffer_0[idx_0];
+}
+
+
+// #line 203
+float2 smoothStep_0(float2 x_0, float2 minval_0, float2 maxval_0)
+{
+    float2 y_0 = clamp((x_0 - minval_0) / (maxval_0 - minval_0), (float2)0.0, (float2)1.0);
+    return y_0 * y_0 * (3.0 - 2.0 * y_0);
+}
+
+
+// #line 203
+float3 smoothStep_1(float3 x_1, float3 minval_1, float3 maxval_1)
+{
+    float3 y_1 = clamp((x_1 - minval_1) / (maxval_1 - minval_1), (float3)0.0, (float3)1.0);
+    return y_1 * y_1 * (3.0 - 2.0 * y_1);
+}
+
+
+
+float smoothStep_2(float x_2, float minval_2, float maxval_2)
+{
+    float y_2 = clamp((x_2 - minval_2) / (maxval_2 - minval_2), 0.0, 1.0);
+    return y_2 * y_2 * (3.0 - 2.0 * y_2);
+}
+
+
+// #line 408
+struct Gaussian2D_0
+{
+    float2 center_2;
+    float2x2 sigma_0;
+    float3 color_0;
+    float opacity_0;
+};
+
+Gaussian2D_0 Gaussian2D_load_0(uint idx_1, uint localIdx_0)
+{
+    uint total_0 = Gaussian2D_count_0();
+    Gaussian2D_0 gaussian_0;
+
+    gaussian_0.center_2 = smoothStep_0(float2(loadFloat_0(idx_1, localIdx_0), loadFloat_0(total_0 + idx_1, localIdx_0)), float2(0.0, 0.0), float2(1.0, 1.0));
+
+// #line 429
+    gaussian_0.sigma_0[int(0)][int(0)] = smoothStep_2(loadFloat_0(total_0 * 2U + idx_1, localIdx_0) * 0.80000001192092896, 0.0, 1.0) + 0.00499999988824129;
+
+
+    float _S6 = smoothStep_2(loadFloat_0(total_0 * 3U + idx_1, localIdx_0) * 0.80000001192092896, 0.0, 1.0) + 0.00499999988824129;
+
+// #line 431
+    gaussian_0.sigma_0[int(1)][int(1)] = _S6;
+
+
+
+    float aniso_0 = (smoothStep_2(loadFloat_0(total_0 * 4U + idx_1, localIdx_0) * 0.60000002384185791, 0.0, 1.0) - 0.5) * 1.64999997615814209;
+
+    gaussian_0.sigma_0[int(0)][int(1)] = sqrt(gaussian_0.sigma_0[int(0)][int(0)] * _S6) * aniso_0;
+    gaussian_0.sigma_0[int(1)][int(0)] = sqrt(gaussian_0.sigma_0[int(0)][int(0)] * gaussian_0.sigma_0[int(1)][int(1)]) * aniso_0;
+
+
+    gaussian_0.color_0 = smoothStep_1(float3(loadFloat_0(total_0 * 5U + idx_1, localIdx_0) * 0.80000001192092896, loadFloat_0(total_0 * 6U + idx_1, localIdx_0) * 0.80000001192092896, loadFloat_0(total_0 * 7U + idx_1, localIdx_0) * 0.80000001192092896), float3(0.0, 0.0, 0.0), float3(1.0, 1.0, 1.0));
+
+// #line 449
+    gaussian_0.opacity_0 = smoothStep_2(loadFloat_0(total_0 * 8U + idx_1, localIdx_0) * 0.89999997615814209 + 0.10000000149011612, 0.0, 1.0);
+
+
+
+    gaussian_0.sigma_0 = gaussian_0.sigma_0 * 0.00009999999747379;
+
+    return gaussian_0;
+}
+
+
+// #line 486
+OBB_0 Gaussian2D_bounds_0(Gaussian2D_0 this_0)
+{
+
+// #line 486
+    bool _S7;
+
+// #line 498
+    if(abs(this_0.sigma_0[int(0)][int(1)]) < 9.99999997475242708e-07)
+    {
+
+// #line 498
+        _S7 = true;
+
+// #line 498
+    }
+    else
+    {
+
+// #line 498
+        _S7 = abs(this_0.sigma_0[int(1)][int(0)]) < 9.99999997475242708e-07;
+
+// #line 498
+    }
+
+// #line 498
+    if(_S7)
+    {
+
+// #line 504
+        return OBB_x24init_0(this_0.center_2, float2x2(float2(1.0, 0.0), float2(0.0, 1.0)), float2(sqrt(this_0.sigma_0[int(0)][int(0)]), sqrt(this_0.sigma_0[int(1)][int(1)])) * 4.0);
+    }
+    else
+    {
+        float trace_0 = this_0.sigma_0[int(0)][int(0)] + this_0.sigma_0[int(1)][int(1)];
+
+
+        float _S8 = sqrt(trace_0 * trace_0 - 4.0 * (this_0.sigma_0[int(0)][int(0)] * this_0.sigma_0[int(1)][int(1)] - this_0.sigma_0[int(0)][int(1)] * this_0.sigma_0[int(1)][int(0)]));
+
+// #line 511
+        float lambda1_0 = 0.5 * (trace_0 + _S8);
+        float lambda2_0 = 0.5 * (trace_0 - _S8);
+
+        float2x2 eigenvectors_0;
+        float2 _S9 = float2(lambda1_0 - this_0.sigma_0[int(1)][int(1)], this_0.sigma_0[int(1)][int(0)]);
+
+// #line 515
+        eigenvectors_0[int(0)] = _S9 / length(_S9);
+        float2 _S10 = float2(this_0.sigma_0[int(0)][int(1)], lambda2_0 - this_0.sigma_0[int(0)][int(0)]);
+
+// #line 516
+        eigenvectors_0[int(1)] = _S10 / length(_S10);
+
+// #line 521
+        return OBB_x24init_0(this_0.center_2, eigenvectors_0, float2(sqrt(lambda1_0), sqrt(lambda2_0)) * 4.0);
+    }
+
+// #line 521
+}
+
+
+// #line 395
+float2x2 inverse_0(float2x2 mat_0)
+{
+
+
+    float det_0 = determinant(mat_0);
+
+// #line 397
+    float2x2 output_0;
+
+
+    output_0[int(0)][int(0)] = mat_0[int(1)][int(1)] / det_0;
+    output_0[int(0)][int(1)] = - mat_0[int(0)][int(1)] / det_0;
+    output_0[int(1)][int(0)] = - mat_0[int(1)][int(0)] / det_0;
+    output_0[int(1)][int(1)] = mat_0[int(0)][int(0)] / det_0;
+
+    return output_0;
+}
+
+
+// #line 155
+bool OBB_arePtsSeparatedAlongAxes_0(float2  pts_0[int(4)], float2  otherPts_0[int(4)], float2x2 axes_0)
+{
+
+// #line 155
+    int i_0 = int(0);
+
+
+
+    for(;;)
+    {
+
+// #line 159
+        if(i_0 < int(2))
+        {
+        }
+        else
+        {
+
+// #line 159
+            break;
+        }
+
+// #line 159
+        int _S11 = i_0;
+
+
+        float _S12 = dot(pts_0[int(0)], axes_0[i_0]);
+
+// #line 162
+        float2 proj_0 = float2(_S12, _S12);
+        float _S13 = dot(otherPts_0[int(0)], axes_0[i_0]);
+
+// #line 163
+        float2 otherProj_0 = float2(_S13, _S13);
+
+// #line 163
+        int j_0 = int(1);
+
+        for(;;)
+        {
+
+// #line 165
+            if(j_0 < int(4))
+            {
+            }
+            else
+            {
+
+// #line 165
+                break;
+            }
+            proj_0[int(0)] = min(proj_0.x, dot(pts_0[j_0], axes_0[_S11]));
+            proj_0[int(1)] = max(proj_0.y, dot(pts_0[j_0], axes_0[_S11]));
+
+            otherProj_0[int(0)] = min(otherProj_0.x, dot(otherPts_0[j_0], axes_0[_S11]));
+            otherProj_0[int(1)] = max(otherProj_0.y, dot(otherPts_0[j_0], axes_0[_S11]));
+
+// #line 165
+            j_0 = j_0 + int(1);
+
+// #line 165
+        }
+
+// #line 165
+        bool _S14;
+
+// #line 174
+        if(proj_0.y < otherProj_0.x)
+        {
+
+// #line 174
+            _S14 = true;
+
+// #line 174
+        }
+        else
+        {
+
+// #line 174
+            _S14 = otherProj_0.y < proj_0.x;
+
+// #line 174
+        }
+
+// #line 174
+        if(_S14)
+        {
+
+// #line 175
+            return true;
+        }
+
+// #line 159
+        i_0 = i_0 + int(1);
+
+// #line 159
+    }
+
+// #line 178
+    return false;
+}
+
+
+// #line 133
+bool OBB_intersects_0(OBB_0 this_1, OBB_0 other_0)
+{
+    float2  _S15[int(4)] = { float2(-1.0, -1.0), float2(1.0, -1.0), float2(1.0, 1.0), float2(-1.0, 1.0) };
+
+    float2x2 _S16 = inverse_0(this_1.rotation_0);
+    float2x2 _S17 = inverse_0(other_0.rotation_0);
+    float2  pts_1[int(4)];
+
+// #line 139
+    int i_1 = int(0);
+    for(;;)
+    {
+
+// #line 140
+        if(i_1 < int(4))
+        {
+        }
+        else
+        {
+
+// #line 140
+            break;
+        }
+
+// #line 141
+        pts_1[i_1] = this_1.center_0 + float2(dot(_S16[int(0)], _S15[i_1] * this_1.scale_0), dot(_S16[int(1)], _S15[i_1] * this_1.scale_0));
+
+// #line 140
+        i_1 = i_1 + int(1);
+
+// #line 140
+    }
+
+// #line 145
+    float2  otherPts_1[int(4)];
+
+// #line 145
+    i_1 = int(0);
+    for(;;)
+    {
+
+// #line 146
+        if(i_1 < int(4))
+        {
+        }
+        else
+        {
+
+// #line 146
+            break;
+        }
+
+// #line 147
+        otherPts_1[i_1] = other_0.center_0 + float2(dot(_S17[int(0)], _S15[i_1] * other_0.scale_0), dot(_S17[int(1)], _S15[i_1] * other_0.scale_0));
+
+// #line 146
+        i_1 = i_1 + int(1);
+
+// #line 146
+    }
+
+// #line 146
+    bool _S18;
+
+// #line 151
+    if(OBB_arePtsSeparatedAlongAxes_0(pts_1, otherPts_1, this_1.rotation_0))
+    {
+
+// #line 151
+        _S18 = true;
+
+// #line 151
+    }
+    else
+    {
+
+// #line 151
+        _S18 = OBB_arePtsSeparatedAlongAxes_0(pts_1, otherPts_1, other_0.rotation_0);
+
+// #line 151
+    }
+
+// #line 151
+    return !_S18;
+}
+
+
+// #line 87
+static groupshared uint  blobs_0[int(256)];
+
+
+// #line 107
+struct FilledShortList_0
+{
+    int _dummy_1;
+};
+
+
+// #line 600
+FilledShortList_0 coarseRasterize_0(InitializedShortList_0 sList_0, OBB_0 tileBounds_0, uint localIdx_1)
+{
+    GroupMemoryBarrierWithGroupSync();
+
+
+    uint _S19 = Gaussian2D_count_0();
+
+// #line 605
+    uint i_2 = localIdx_1;
+    for(;;)
+    {
+
+// #line 606
+        if(i_2 < _S19)
+        {
+        }
+        else
+        {
+
+// #line 606
+            break;
+        }
+
+
+        if(OBB_intersects_0(Gaussian2D_bounds_0(Gaussian2D_load_0(i_2, localIdx_1)), tileBounds_0))
+        {
+            uint _S20;
+            InterlockedAdd(blobCountAT_0, 1, _S20);
+
+// #line 612
+            blobs_0[_S20] = i_2;
+
+// #line 610
+        }
+
+// #line 606
+        i_2 = i_2 + 256U;
+
+// #line 606
+    }
+
+// #line 616
+    GroupMemoryBarrierWithGroupSync();
+
+    uint _S21 = blobCountAT_0;
+
+// #line 618
+    blobCount_0 = _S21;
+
+    FilledShortList_0 _S22 = { int(0) };
+
+// #line 620
+    return _S22;
+}
+
+
+// #line 108
+struct PaddedShortList_0
+{
+    int _dummy_2;
+};
+
+
+// #line 531
+PaddedShortList_0 padBuffer_0(FilledShortList_0 SLANG_anonymous_0_0, uint localIdx_2)
+{
+    GroupMemoryBarrierWithGroupSync();
+
+    uint _S23 = blobCount_0;
+
+// #line 535
+    uint i_3 = localIdx_2;
+    for(;;)
+    {
+
+// #line 536
+        if(int(i_3) < int(256))
+        {
+        }
+        else
+        {
+
+// #line 536
+            break;
+        }
+        if(i_3 >= _S23)
+        {
+
+// #line 539
+            blobs_0[i_3] = 4294967295U;
+
+// #line 538
+        }
+
+// #line 536
+        i_3 = i_3 + 256U;
+
+// #line 536
+    }
+
+// #line 542
+    PaddedShortList_0 _S24 = { int(0) };
+
+// #line 542
+    return _S24;
+}
+
+
+// #line 109
+struct SortedShortList_0
+{
+    int _dummy_3;
+};
+
+
+// #line 556
+SortedShortList_0 bitonicSort_0(PaddedShortList_0 SLANG_anonymous_1_0, uint localIdx_3)
+{
+    GroupMemoryBarrierWithGroupSync();
+
+// #line 558
+    uint k_0 = 2U;
+
+
+    for(;;)
+    {
+
+// #line 561
+        if(int(k_0) <= int(256))
+        {
+        }
+        else
+        {
+
+// #line 561
+            break;
+        }
+
+// #line 561
+        uint j_1 = k_0 / 2U;
+
+        for(;;)
+        {
+
+// #line 563
+            if(j_1 > 0U)
+            {
+            }
+            else
+            {
+
+// #line 563
+                break;
+            }
+
+// #line 563
+            uint i_4 = localIdx_3;
+
+            for(;;)
+            {
+
+// #line 565
+                if(int(i_4) < int(256))
+                {
+                }
+                else
+                {
+
+// #line 565
+                    break;
+                }
+                uint l_0 = i_4 ^ j_1;
+                if(l_0 > i_4)
+                {
+
+// #line 568
+                    bool _S25;
+
+                    if((i_4 & k_0) == 0U)
+                    {
+
+// #line 570
+                        _S25 = blobs_0[i_4] > blobs_0[l_0];
+
+// #line 570
+                    }
+                    else
+                    {
+
+// #line 570
+                        _S25 = false;
+
+// #line 570
+                    }
+
+// #line 570
+                    bool _S26;
+
+// #line 570
+                    if(_S25)
+                    {
+
+// #line 570
+                        _S26 = true;
+
+// #line 570
+                    }
+                    else
+                    {
+
+// #line 571
+                        if((i_4 & k_0) != 0U)
+                        {
+
+// #line 571
+                            _S26 = blobs_0[i_4] < blobs_0[l_0];
+
+// #line 571
+                        }
+                        else
+                        {
+
+// #line 571
+                            _S26 = false;
+
+// #line 571
+                        }
+
+// #line 570
+                    }
+
+// #line 570
+                    if(_S26)
+                    {
+
+
+                        uint temp_0 = blobs_0[i_4];
+                        blobs_0[i_4] = blobs_0[l_0];
+                        blobs_0[l_0] = temp_0;
+
+// #line 570
+                    }
+
+// #line 568
+                }
+
+// #line 565
+                i_4 = i_4 + 256U;
+
+// #line 565
+            }
+
+// #line 581
+            GroupMemoryBarrierWithGroupSync();
+
+// #line 563
+            j_1 = j_1 / 2U;
+
+// #line 563
+        }
+
+// #line 561
+        k_0 = k_0 * 2U;
+
+// #line 561
+    }
+
+// #line 585
+    SortedShortList_0 _S27 = { int(0) };
+
+// #line 585
+    return _S27;
+}
+
+
+// #line 93
+static groupshared float4  finalVal_0[int(256)];
+
+
+// #line 92
+static groupshared uint  maxCount_0[int(256)];
+
+
+// #line 473
+float4 Gaussian2D_eval_0(Gaussian2D_0 this_2, float2 uv_0)
+{
+    float2x2 invCov_0 = inverse_0(this_2.sigma_0);
+    float2 diff_0 = uv_0 - this_2.center_2;
+    float _S28 = diff_0.x;
+    float _S29 = diff_0.y;
+
+// #line 483
+    return float4(this_2.color_0, min(0.99000000953674316, this_2.opacity_0 * exp(-0.5 * (_S28 * _S28 * invCov_0[int(0)][int(0)] + _S29 * _S29 * invCov_0[int(1)][int(1)] + _S28 * _S29 * invCov_0[int(0)][int(1)] + _S29 * _S28 * invCov_0[int(1)][int(0)]))));
+}
+
+
+// #line 624
+float4 eval_0(uint blob_id_0, float2 uv_1, uint localIdx_4)
+{
+
+    return Gaussian2D_eval_0(Gaussian2D_load_0(blob_id_0, localIdx_4), uv_1);
+}
+
+
+// #line 223
+float4 preMult_0(float4 pixel_0)
+{
+    float _S30 = pixel_0.w;
+
+// #line 225
+    return float4(pixel_0.xyz * _S30, _S30);
+}
+
+
+// #line 235
+float4 alphaBlend_0(float4 pixel_1, float4 gval_0)
+{
+    float4 _S31 = preMult_0(gval_0);
+
+
+    float _S32 = pixel_1.w;
+
+// #line 239
+    return float4(pixel_1.xyz + _S31.xyz * _S32, _S32 * (1.0 - _S31.w));
+}
+
+
+// #line 266
+struct PixelState_0
+{
+    float4 value_0;
+    uint finalCount_0;
+};
+
+
+// #line 282
+PixelState_0 transformPixelState_0(PixelState_0 pixel_2, float4 gval_1)
+{
+    float4 newState_0 = alphaBlend_0(pixel_2.value_0, gval_1);
+
+    if(pixel_2.value_0.w < 0.00392156885936856)
+    {
+
+// #line 287
+        PixelState_0 _S33 = { pixel_2.value_0, pixel_2.finalCount_0 };
+
+// #line 287
+        return _S33;
+    }
+    PixelState_0 _S34 = { newState_0, pixel_2.finalCount_0 + 1U };
+
+// #line 289
+    return _S34;
+}
+
+
+// #line 641
+float4 fineRasterize_0(SortedShortList_0 SLANG_anonymous_2_0, uint localIdx_5, float2 uv_2)
+{
+    GroupMemoryBarrierWithGroupSync();
+
+
+    uint _S35 = blobCount_0;
+
+// #line 646
+    PixelState_0 pixelState_0;
+
+// #line 646
+    pixelState_0.value_0 = float4(0.0, 0.0, 0.0, 1.0);
+
+// #line 646
+    pixelState_0.finalCount_0 = 0U;
+
+// #line 646
+    uint i_5 = 0U;
+
+    for(;;)
+    {
+
+// #line 648
+        if(i_5 < _S35)
+        {
+        }
+        else
+        {
+
+// #line 648
+            break;
+        }
+
+// #line 649
+        PixelState_0 _S36 = transformPixelState_0(pixelState_0, eval_0(blobs_0[i_5], uv_2, localIdx_5));
+
+// #line 648
+        uint _S37 = i_5 + 1U;
+
+// #line 648
+        pixelState_0 = _S36;
+
+// #line 648
+        i_5 = _S37;
+
+// #line 648
+    }
+
+
+    maxCount_0[localIdx_5] = pixelState_0.finalCount_0;
+    finalVal_0[localIdx_5] = pixelState_0.value_0;
+    return pixelState_0.value_0;
+}
+
+
+// #line 781
+float4 splatBlobs_0(uint2 dispatchThreadID_2, int2 dispatchSize_0)
+{
+
+
+    int texWidth_0;
+    int texHeight_0;
+    targetTexture_0.GetDimensions(texWidth_0, texHeight_0);
+    int2 texSize_0 = int2(texWidth_0, texHeight_0);
+
+
+
+    float2 uv_3 = calcUV_0(dispatchThreadID_2, dispatchSize_0, texSize_0);
+
+// #line 798
+    uint2 tileCoords_0 = uint2(uint(int(dispatchThreadID_2.x) / int(16)), uint(int(dispatchThreadID_2.y) / int(16)));
+
+    uint2 _S38 = uint2(16U, 16U);
+
+// #line 800
+    float2 tileLow_0 = calcUV_0(tileCoords_0 * _S38, dispatchSize_0, texSize_0);
+    float2 tileHigh_0 = calcUV_0((tileCoords_0 + 1U) * _S38, dispatchSize_0, texSize_0);
+
+// #line 807
+    OBB_0 tileBounds_1 = OBB_x24init_0((tileLow_0 + tileHigh_0) / 2.0, float2x2(1.0, 0.0, 0.0, 1.0), (tileHigh_0 - tileLow_0) / 2.0);
+
+// #line 814
+    InitializedShortList_0 sList_1 = initShortList_0(dispatchThreadID_2);
+
+    uint2 localID_0 = dispatchThreadID_2 % _S38;
+    uint localIdx_6 = uint(int(localID_0.x) + int(localID_0.y) * int(16));
+
+
+    FilledShortList_0 filledSList_0 = coarseRasterize_0(sList_1, tileBounds_1, localIdx_6);
+
+
+    PaddedShortList_0 paddedSList_0 = padBuffer_0(filledSList_0, localIdx_6);
+
+
+    SortedShortList_0 sortedList_0 = bitonicSort_0(paddedSList_0, localIdx_6);
+
+
+    float4 color_1 = fineRasterize_0(sortedList_0, localIdx_6, uv_3);
+
+
+    float _S39 = color_1.w;
+
+// #line 832
+    return float4(color_1.xyz * (1.0 - _S39) + _S39, 1.0);
+}
+
+
+// #line 960
+[shader("compute")][numthreads(32, 32, 1)]
+void imageMain(uint3 threadId_0 : SV_DispatchThreadID)
+{
+
+// #line 962
+    uint2 _S40 = threadId_0.xy;
+
+// #line 962
+    float4 _S41 = splatBlobs_0(_S40, int2(U_ScreenSize_0.xy));
+
+// #line 962
+    result_0[_S40] = _S41;
+    return;
+}
+

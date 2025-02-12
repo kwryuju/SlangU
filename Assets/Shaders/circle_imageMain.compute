@@ -1,3 +1,5 @@
+#pragma use_dxc
+
 #pragma kernel imageMain
 
 #pragma pack_matrix(column_major)
@@ -11,11 +13,11 @@
 #endif
 
 
-#line 7 "D:/Programs/SlangU/Assets/Shaders/circle.slang"
+// #line 7 "D:/Programs/SlangU/Assets/Shaders/circle.slang"
 RWTexture2D<float4 > result_0 : register(u0);
 
 
-#line 78 "core"
+// #line 78 "core"
 // struct GlobalParams_0
 // {
     float4 U_ScreenSize_0;
@@ -23,37 +25,37 @@ RWTexture2D<float4 > result_0 : register(u0);
 // };
 
 
-#line 78
+// #line 78
 // cbuffer globalParams_0 : register(b0)
 // {
 //     GlobalParams_0 globalParams_0;
 // }
 
-#line 652 "core.meta.slang"
+// #line 652 "core.meta.slang"
 float float_getPi_0()
 {
 
-#line 652
+// #line 652
     return 3.14159274101257324;
 }
 
 
-#line 13 "D:/Programs/SlangU/Assets/Shaders/circle.slang"
-[numthreads(32, 32, 1)]
+// #line 13 "D:/Programs/SlangU/Assets/Shaders/circle.slang"
+[shader("compute")][numthreads(32, 32, 1)]
 void imageMain(uint3 threadId_0 : SV_DispatchThreadID)
 {
 
-#line 15
+// #line 15
     uint2 _S1 = threadId_0.xy;
 
-#line 15
+// #line 15
     float2 p_0 = (float2(_S1) * 2.0 - U_ScreenSize_0.xy) / U_ScreenSize_0.y;
     float tau_0 = float_getPi_0() * 2.0;
 
 
     float _S2 = atan2(p_0.x, p_0.y) / tau_0;
 
-#line 19
+// #line 19
     float2 uv_0 = float2(_S2, length(p_0) * 0.75);
 
     float time_0 = _Time_0.y;
@@ -68,7 +70,7 @@ void imageMain(uint3 threadId_0 : SV_DispatchThreadID)
         horColour_0[int(0)] = horColour_0[int(0)] + (1.0 - xCol_0);
         horColour_0[int(1)] = horColour_0[int(1)] + xCol_0;
 
-#line 28
+// #line 28
     }
     else
     {
@@ -80,26 +82,26 @@ void imageMain(uint3 threadId_0 : SV_DispatchThreadID)
             horColour_0[int(1)] = horColour_0[int(1)] + (1.0 - xCol_1);
             horColour_0[int(2)] = horColour_0[int(2)] + xCol_1;
 
-#line 33
+// #line 33
         }
         else
         {
 
-#line 41
+// #line 41
             float xCol_2 = xCol_0 - 2.0;
             horColour_0[int(2)] = horColour_0[int(2)] + (1.0 - xCol_2);
             horColour_0[int(0)] = horColour_0[int(0)] + xCol_2;
 
-#line 33
+// #line 33
         }
 
-#line 28
+// #line 28
     }
 
-#line 47
+// #line 47
     float2 uv_1 = 2.0 * uv_0 - 1.0;
 
-#line 53
+// #line 53
     result_0[_S1] = float4((float3)((0.69999998807907104 + 0.5 * cos(uv_1.x * 10.0 * tau_0 * 0.15000000596046448 * clamp(floor(5.0 + 10.0 * cos(time_0)), 0.0, 10.0))) * abs(1.0 / (30.0 * uv_1.y))) * horColour_0, 1.0);
     return;
 }

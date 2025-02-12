@@ -45,4 +45,9 @@ public class CircleImage : MonoBehaviour
             Debug.LogWarning("Renderer componet is not found.");
         }
     }
+
+    private void OnDestroy()
+    {
+        renderTexture?.Release();
+    }
 }

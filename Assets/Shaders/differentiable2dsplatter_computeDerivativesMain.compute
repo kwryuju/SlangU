@@ -1,0 +1,4249 @@
+#pragma use_dxc
+
+#pragma kernel computeDerivativesMain
+
+#pragma pack_matrix(column_major)
+#ifdef SLANG_HLSL_ENABLE_NVAPI
+#include "nvHLSLExtns.h"
+#endif
+
+#ifndef __DXC_VERSION_MAJOR
+    // warning X3557: loop doesn't seem to do anything, forcing loop to unroll
+    #pragma warning(disable: 3557)
+#endif
+
+
+// #line 63 "D:/Programs/SlangU/Assets/Shaders/differentiable2dsplatter.slang"
+Texture2D<float4 > targetTexture_0 : register(t0);
+
+
+// #line 54
+RWStructuredBuffer<uint > derivBuffer_0 : register(u1);
+
+
+// #line 51
+RWStructuredBuffer<float > blobsBuffer_0 : register(u0);
+
+
+// #line 726
+float2 calcUV_0(uint2 dispatchThreadID_0, int2 renderSize_0, int2 imageSize_0)
+{
+
+    if(all(renderSize_0 == imageSize_0))
+    {
+
+// #line 730
+        return float2(dispatchThreadID_0) / float2(renderSize_0);
+    }
+    float _S1 = float(renderSize_0.x);
+
+// #line 732
+    float _S2 = float(renderSize_0.y);
+
+// #line 732
+    float aspectRatioRT_0 = _S1 / _S2;
+    float aspectRatioTEX_0 = float(imageSize_0.x) / float(imageSize_0.y);
+
+    if(aspectRatioRT_0 > aspectRatioTEX_0)
+    {
+
+// #line 746
+        return float2(float(dispatchThreadID_0.x) / _S1, float(dispatchThreadID_0.y) * aspectRatioTEX_0 / _S1 + (1.0 - aspectRatioTEX_0 / aspectRatioRT_0) / 2.0);
+    }
+    else
+    {
+
+// #line 759
+        return float2(float(dispatchThreadID_0.x) / (_S2 * aspectRatioTEX_0) + (1.0 - aspectRatioRT_0 / aspectRatioTEX_0) / 2.0, float(dispatchThreadID_0.y) / _S2);
+    }
+
+// #line 759
+}
+
+
+// #line 118
+struct OBB_0
+{
+    float2 center_0;
+    float2x2 rotation_0;
+    float2 scale_0;
+};
+
+
+// #line 184
+OBB_0 OBB_x24init_0(float2 center_1, float2x2 rotation_1, float2 scale_1)
+{
+
+// #line 184
+    OBB_0 _S3;
+
+    _S3.center_0 = center_1;
+    _S3.rotation_0 = rotation_1;
+    _S3.scale_0 = scale_1;
+
+// #line 184
+    return _S3;
+}
+
+
+// #line 82
+static groupshared uint blobCount_0;
+
+
+// #line 76
+static groupshared uint blobCountAT_0;
+
+
+// #line 106
+struct InitializedShortList_0
+{
+    int _dummy_0;
+};
+
+
+// #line 710
+InitializedShortList_0 initShortList_0(uint2 dispatchThreadID_1)
+{
+    GroupMemoryBarrierWithGroupSync();
+
+// #line 712
+    bool _S4;
+
+    if(int(dispatchThreadID_1.x) % int(16) == int(0))
+    {
+
+// #line 714
+        _S4 = int(dispatchThreadID_1.y) % int(16) == int(0);
+
+// #line 714
+    }
+    else
+    {
+
+// #line 714
+        _S4 = false;
+
+// #line 714
+    }
+
+// #line 714
+    if(_S4)
+    {
+        blobCount_0 = 0U;
+
+// #line 716
+        blobCountAT_0 = 0U;
+
+// #line 714
+    }
+
+// #line 719
+    InitializedShortList_0 _S5 = { int(0) };
+
+// #line 719
+    return _S5;
+}
+
+
+// #line 459
+uint Gaussian2D_count_0()
+{
+
+    return 20480U;
+}
+
+
+// #line 408
+struct Gaussian2D_0
+{
+    float2 center_2;
+    float2x2 sigma_0;
+    float3 color_0;
+    float opacity_0;
+};
+
+
+// #line 891
+Gaussian2D_0 Gaussian2D_x24_syn_dzero_0()
+{
+
+// #line 891
+    Gaussian2D_0 result_0;
+
+// #line 891
+    result_0.center_2 = (float2)0.0;
+
+// #line 891
+    result_0.sigma_0 = float2x2(0.0, 0.0, 0.0, 0.0);
+
+// #line 891
+    result_0.color_0 = (float3)0.0;
+
+// #line 891
+    result_0.opacity_0 = 0.0;
+
+// #line 891
+    return result_0;
+}
+
+
+// #line 891
+Gaussian2D_0 Gaussian2D_x24_syn_dadd_0(Gaussian2D_0 SLANG_anonymous_0_0, Gaussian2D_0 SLANG_anonymous_1_0)
+{
+
+// #line 891
+    Gaussian2D_0 result_1;
+
+// #line 891
+    result_1.center_2 = SLANG_anonymous_0_0.center_2 + SLANG_anonymous_1_0.center_2;
+
+// #line 891
+    result_1.sigma_0 = SLANG_anonymous_0_0.sigma_0 + SLANG_anonymous_1_0.sigma_0;
+
+// #line 891
+    result_1.color_0 = SLANG_anonymous_0_0.color_0 + SLANG_anonymous_1_0.color_0;
+
+// #line 891
+    result_1.opacity_0 = SLANG_anonymous_0_0.opacity_0 + SLANG_anonymous_1_0.opacity_0;
+
+// #line 891
+    return result_1;
+}
+
+
+// #line 96
+static groupshared float  reductionBuffer_0[int(256)];
+
+
+// #line 368
+void atomicAccumulate_0(float val_0, uint idx_0)
+{
+
+    if(val_0 == 0.0)
+    {
+
+// #line 372
+        return;
+    }
+
+
+
+    for(;;)
+    {
+        uint oldInt_0 = derivBuffer_0[idx_0];
+
+// #line 389
+        uint _S6;
+        InterlockedCompareExchange(derivBuffer_0[idx_0], oldInt_0, asuint(asfloat(oldInt_0) + val_0), _S6);
+
+// #line 389
+        if(_S6 == oldInt_0)
+        {
+
+// #line 390
+            break;
+        }
+
+// #line 377
+    }
+
+// #line 392
+    return;
+}
+
+
+// #line 334
+void loadFloat_bwd_0(uint idx_1, uint localDispatchIdx_0, float dOut_0)
+{
+
+    if(abs(dOut_0) < 10.0)
+    {
+
+// #line 338
+        reductionBuffer_0[localDispatchIdx_0] = dOut_0;
+
+// #line 337
+    }
+    else
+    {
+        reductionBuffer_0[localDispatchIdx_0] = 10.0 * float(sign(dOut_0));
+
+// #line 337
+    }
+
+// #line 342
+    GroupMemoryBarrierWithGroupSync();
+
+// #line 342
+    uint stride_0 = 128U;
+
+
+    for(;;)
+    {
+
+// #line 345
+        if(stride_0 > 0U)
+        {
+        }
+        else
+        {
+
+// #line 345
+            break;
+        }
+        if(localDispatchIdx_0 < stride_0)
+        {
+
+// #line 348
+            reductionBuffer_0[localDispatchIdx_0] = reductionBuffer_0[localDispatchIdx_0] + reductionBuffer_0[localDispatchIdx_0 + stride_0];
+
+// #line 347
+        }
+
+
+        GroupMemoryBarrierWithGroupSync();
+
+// #line 345
+        stride_0 = stride_0 / 2U;
+
+// #line 345
+    }
+
+// #line 353
+    if(localDispatchIdx_0 == 0U)
+    {
+
+// #line 354
+        atomicAccumulate_0(reductionBuffer_0[int(0)], idx_1);
+
+// #line 353
+    }
+
+    return;
+}
+
+
+// #line 319
+float loadFloat_0(uint idx_2, uint localDispatchIdx_1)
+{
+    return blobsBuffer_0[idx_2];
+}
+
+
+// #line 321
+struct DiffPair_float_0
+{
+    float primal_0;
+    float differential_0;
+};
+
+
+// #line 1945 "diff.meta.slang"
+void _d_min_0(inout DiffPair_float_0 dpx_0, inout DiffPair_float_0 dpy_0, float dOut_1)
+{
+    DiffPair_float_0 _S7 = dpx_0;
+
+// #line 1947
+    float _S8;
+
+// #line 1947
+    if(dpx_0.primal_0 < dpy_0.primal_0)
+    {
+
+// #line 1947
+        _S8 = dOut_1;
+
+// #line 1947
+    }
+    else
+    {
+
+// #line 1947
+        _S8 = 0.0;
+
+// #line 1947
+    }
+
+// #line 1947
+    dpx_0.primal_0 = _S7.primal_0;
+
+// #line 1947
+    dpx_0.differential_0 = _S8;
+    DiffPair_float_0 _S9 = dpy_0;
+
+// #line 1948
+    if(dpy_0.primal_0 < _S7.primal_0)
+    {
+
+// #line 1948
+        _S8 = dOut_1;
+
+// #line 1948
+    }
+    else
+    {
+
+// #line 1948
+        _S8 = 0.0;
+
+// #line 1948
+    }
+
+// #line 1948
+    dpy_0.primal_0 = _S9.primal_0;
+
+// #line 1948
+    dpy_0.differential_0 = _S8;
+    return;
+}
+
+
+// #line 1992
+void _d_clamp_0(inout DiffPair_float_0 dpx_1, inout DiffPair_float_0 dpMin_0, inout DiffPair_float_0 dpMax_0, float dOut_2)
+{
+    DiffPair_float_0 _S10 = dpx_1;
+
+// #line 1994
+    bool _S11;
+
+// #line 1994
+    if(dpx_1.primal_0 > dpMin_0.primal_0)
+    {
+
+// #line 1994
+        _S11 = dpx_1.primal_0 < dpMax_0.primal_0;
+
+// #line 1994
+    }
+    else
+    {
+
+// #line 1994
+        _S11 = false;
+
+// #line 1994
+    }
+
+// #line 1994
+    float _S12;
+
+// #line 1994
+    if(_S11)
+    {
+
+// #line 1994
+        _S12 = dOut_2;
+
+// #line 1994
+    }
+    else
+    {
+
+// #line 1994
+        _S12 = 0.0;
+
+// #line 1994
+    }
+
+// #line 1994
+    dpx_1.primal_0 = _S10.primal_0;
+
+// #line 1994
+    dpx_1.differential_0 = _S12;
+    DiffPair_float_0 _S13 = dpMin_0;
+
+// #line 1995
+    if(_S10.primal_0 <= dpMin_0.primal_0)
+    {
+
+// #line 1995
+        _S12 = dOut_2;
+
+// #line 1995
+    }
+    else
+    {
+
+// #line 1995
+        _S12 = 0.0;
+
+// #line 1995
+    }
+
+// #line 1995
+    dpMin_0.primal_0 = _S13.primal_0;
+
+// #line 1995
+    dpMin_0.differential_0 = _S12;
+    DiffPair_float_0 _S14 = dpMax_0;
+
+// #line 1996
+    if(dpx_1.primal_0 >= dpMax_0.primal_0)
+    {
+
+// #line 1996
+        _S12 = dOut_2;
+
+// #line 1996
+    }
+    else
+    {
+
+// #line 1996
+        _S12 = 0.0;
+
+// #line 1996
+    }
+
+// #line 1996
+    dpMax_0.primal_0 = _S14.primal_0;
+
+// #line 1996
+    dpMax_0.differential_0 = _S12;
+    return;
+}
+
+
+// #line 1997
+struct DiffPair_vectorx3Cfloatx2C2x3E_0
+{
+    float2 primal_0;
+    float2 differential_0;
+};
+
+
+// #line 1 "token paste"
+void _d_clamp_vector_0(inout DiffPair_vectorx3Cfloatx2C2x3E_0 dpx_2, inout DiffPair_vectorx3Cfloatx2C2x3E_0 dpy_1, inout DiffPair_vectorx3Cfloatx2C2x3E_0 dpz_0, float2 dOut_3)
+{
+
+// #line 1630 "diff.meta.slang"
+    DiffPair_float_0 left_dp_0;
+
+// #line 1630
+    left_dp_0.primal_0 = dpx_2.primal_0[int(0)];
+
+// #line 1630
+    left_dp_0.differential_0 = 0.0;
+    DiffPair_float_0 middle_dp_0;
+
+// #line 1631
+    middle_dp_0.primal_0 = dpy_1.primal_0[int(0)];
+
+// #line 1631
+    middle_dp_0.differential_0 = 0.0;
+    DiffPair_float_0 right_dp_0;
+
+// #line 1632
+    right_dp_0.primal_0 = dpz_0.primal_0[int(0)];
+
+// #line 1632
+    right_dp_0.differential_0 = 0.0;
+    _d_clamp_0(left_dp_0, middle_dp_0, right_dp_0, dOut_3[int(0)]);
+
+// #line 1627
+    float2 left_d_result_0;
+
+// #line 1635
+    left_d_result_0[int(0)] = left_dp_0.differential_0;
+
+// #line 1627
+    float2 middle_d_result_0;
+
+// #line 1636
+    middle_d_result_0[int(0)] = middle_dp_0.differential_0;
+
+// #line 1627
+    float2 right_d_result_0;
+
+// #line 1637
+    right_d_result_0[int(0)] = right_dp_0.differential_0;
+
+// #line 1630
+    DiffPair_float_0 left_dp_1;
+
+// #line 1630
+    left_dp_1.primal_0 = dpx_2.primal_0[int(1)];
+
+// #line 1630
+    left_dp_1.differential_0 = 0.0;
+    DiffPair_float_0 middle_dp_1;
+
+// #line 1631
+    middle_dp_1.primal_0 = dpy_1.primal_0[int(1)];
+
+// #line 1631
+    middle_dp_1.differential_0 = 0.0;
+    DiffPair_float_0 right_dp_1;
+
+// #line 1632
+    right_dp_1.primal_0 = dpz_0.primal_0[int(1)];
+
+// #line 1632
+    right_dp_1.differential_0 = 0.0;
+    _d_clamp_0(left_dp_1, middle_dp_1, right_dp_1, dOut_3[int(1)]);
+
+    left_d_result_0[int(1)] = left_dp_1.differential_0;
+    middle_d_result_0[int(1)] = middle_dp_1.differential_0;
+    right_d_result_0[int(1)] = right_dp_1.differential_0;
+
+// #line 1637
+    dpx_2.primal_0 = dpx_2.primal_0;
+
+// #line 1637
+    dpx_2.differential_0 = left_d_result_0;
+
+// #line 1637
+    dpy_1.primal_0 = dpy_1.primal_0;
+
+// #line 1637
+    dpy_1.differential_0 = middle_d_result_0;
+
+// #line 1637
+    dpz_0.primal_0 = dpz_0.primal_0;
+
+// #line 1637
+    dpz_0.differential_0 = right_d_result_0;
+
+// #line 1642
+    return;
+}
+
+
+// #line 1642
+struct DiffPair_vectorx3Cfloatx2C3x3E_0
+{
+    float3 primal_0;
+    float3 differential_0;
+};
+
+
+// #line 1 "token paste"
+void _d_clamp_vector_1(inout DiffPair_vectorx3Cfloatx2C3x3E_0 dpx_3, inout DiffPair_vectorx3Cfloatx2C3x3E_0 dpy_2, inout DiffPair_vectorx3Cfloatx2C3x3E_0 dpz_1, float3 dOut_4)
+{
+
+// #line 1630 "diff.meta.slang"
+    DiffPair_float_0 left_dp_2;
+
+// #line 1630
+    left_dp_2.primal_0 = dpx_3.primal_0[int(0)];
+
+// #line 1630
+    left_dp_2.differential_0 = 0.0;
+    DiffPair_float_0 middle_dp_2;
+
+// #line 1631
+    middle_dp_2.primal_0 = dpy_2.primal_0[int(0)];
+
+// #line 1631
+    middle_dp_2.differential_0 = 0.0;
+    DiffPair_float_0 right_dp_2;
+
+// #line 1632
+    right_dp_2.primal_0 = dpz_1.primal_0[int(0)];
+
+// #line 1632
+    right_dp_2.differential_0 = 0.0;
+    _d_clamp_0(left_dp_2, middle_dp_2, right_dp_2, dOut_4[int(0)]);
+
+// #line 1627
+    float3 left_d_result_1;
+
+// #line 1635
+    left_d_result_1[int(0)] = left_dp_2.differential_0;
+
+// #line 1627
+    float3 middle_d_result_1;
+
+// #line 1636
+    middle_d_result_1[int(0)] = middle_dp_2.differential_0;
+
+// #line 1627
+    float3 right_d_result_1;
+
+// #line 1637
+    right_d_result_1[int(0)] = right_dp_2.differential_0;
+
+// #line 1630
+    DiffPair_float_0 left_dp_3;
+
+// #line 1630
+    left_dp_3.primal_0 = dpx_3.primal_0[int(1)];
+
+// #line 1630
+    left_dp_3.differential_0 = 0.0;
+    DiffPair_float_0 middle_dp_3;
+
+// #line 1631
+    middle_dp_3.primal_0 = dpy_2.primal_0[int(1)];
+
+// #line 1631
+    middle_dp_3.differential_0 = 0.0;
+    DiffPair_float_0 right_dp_3;
+
+// #line 1632
+    right_dp_3.primal_0 = dpz_1.primal_0[int(1)];
+
+// #line 1632
+    right_dp_3.differential_0 = 0.0;
+    _d_clamp_0(left_dp_3, middle_dp_3, right_dp_3, dOut_4[int(1)]);
+
+    left_d_result_1[int(1)] = left_dp_3.differential_0;
+    middle_d_result_1[int(1)] = middle_dp_3.differential_0;
+    right_d_result_1[int(1)] = right_dp_3.differential_0;
+
+// #line 1630
+    DiffPair_float_0 left_dp_4;
+
+// #line 1630
+    left_dp_4.primal_0 = dpx_3.primal_0[int(2)];
+
+// #line 1630
+    left_dp_4.differential_0 = 0.0;
+    DiffPair_float_0 middle_dp_4;
+
+// #line 1631
+    middle_dp_4.primal_0 = dpy_2.primal_0[int(2)];
+
+// #line 1631
+    middle_dp_4.differential_0 = 0.0;
+    DiffPair_float_0 right_dp_4;
+
+// #line 1632
+    right_dp_4.primal_0 = dpz_1.primal_0[int(2)];
+
+// #line 1632
+    right_dp_4.differential_0 = 0.0;
+    _d_clamp_0(left_dp_4, middle_dp_4, right_dp_4, dOut_4[int(2)]);
+
+    left_d_result_1[int(2)] = left_dp_4.differential_0;
+    middle_d_result_1[int(2)] = middle_dp_4.differential_0;
+    right_d_result_1[int(2)] = right_dp_4.differential_0;
+
+// #line 1637
+    dpx_3.primal_0 = dpx_3.primal_0;
+
+// #line 1637
+    dpx_3.differential_0 = left_d_result_1;
+
+// #line 1637
+    dpy_2.primal_0 = dpy_2.primal_0;
+
+// #line 1637
+    dpy_2.differential_0 = middle_d_result_1;
+
+// #line 1637
+    dpz_1.primal_0 = dpz_1.primal_0;
+
+// #line 1637
+    dpz_1.differential_0 = right_d_result_1;
+
+// #line 1642
+    return;
+}
+
+
+// #line 203 "D:/Programs/SlangU/Assets/Shaders/differentiable2dsplatter.slang"
+float2 smoothStep_0(float2 x_0, float2 minval_0, float2 maxval_0)
+{
+    float2 y_0 = clamp((x_0 - minval_0) / (maxval_0 - minval_0), (float2)0.0, (float2)1.0);
+    return y_0 * y_0 * (3.0 - 2.0 * y_0);
+}
+
+
+// #line 203
+float3 smoothStep_1(float3 x_1, float3 minval_1, float3 maxval_1)
+{
+    float3 y_1 = clamp((x_1 - minval_1) / (maxval_1 - minval_1), (float3)0.0, (float3)1.0);
+    return y_1 * y_1 * (3.0 - 2.0 * y_1);
+}
+
+
+
+float smoothStep_2(float x_2, float minval_2, float maxval_2)
+{
+    float y_2 = clamp((x_2 - minval_2) / (maxval_2 - minval_2), 0.0, 1.0);
+    return y_2 * y_2 * (3.0 - 2.0 * y_2);
+}
+
+
+// #line 1 "token paste"
+void _d_sqrt_0(inout DiffPair_float_0 dpx_4, float dOut_5)
+{
+
+// #line 1
+    float _S15 = 0.5 / sqrt(max(1.00000001168609742e-07, dpx_4.primal_0)) * dOut_5;
+
+// #line 1
+    dpx_4.primal_0 = dpx_4.primal_0;
+
+// #line 1
+    dpx_4.differential_0 = _S15;
+
+// #line 1708 "diff.meta.slang"
+    return;
+}
+
+
+// #line 416 "D:/Programs/SlangU/Assets/Shaders/differentiable2dsplatter.slang"
+Gaussian2D_0 Gaussian2D_load_0(uint idx_3, uint localIdx_0)
+{
+    uint total_0 = Gaussian2D_count_0();
+    Gaussian2D_0 gaussian_0;
+
+    gaussian_0.center_2 = smoothStep_0(float2(loadFloat_0(idx_3, localIdx_0), loadFloat_0(total_0 + idx_3, localIdx_0)), float2(0.0, 0.0), float2(1.0, 1.0));
+
+// #line 429
+    gaussian_0.sigma_0[int(0)][int(0)] = smoothStep_2(loadFloat_0(total_0 * 2U + idx_3, localIdx_0) * 0.80000001192092896, 0.0, 1.0) + 0.00499999988824129;
+
+
+    float _S16 = smoothStep_2(loadFloat_0(total_0 * 3U + idx_3, localIdx_0) * 0.80000001192092896, 0.0, 1.0) + 0.00499999988824129;
+
+// #line 431
+    gaussian_0.sigma_0[int(1)][int(1)] = _S16;
+
+
+
+    float aniso_0 = (smoothStep_2(loadFloat_0(total_0 * 4U + idx_3, localIdx_0) * 0.60000002384185791, 0.0, 1.0) - 0.5) * 1.64999997615814209;
+
+    gaussian_0.sigma_0[int(0)][int(1)] = sqrt(gaussian_0.sigma_0[int(0)][int(0)] * _S16) * aniso_0;
+    gaussian_0.sigma_0[int(1)][int(0)] = sqrt(gaussian_0.sigma_0[int(0)][int(0)] * gaussian_0.sigma_0[int(1)][int(1)]) * aniso_0;
+
+
+    gaussian_0.color_0 = smoothStep_1(float3(loadFloat_0(total_0 * 5U + idx_3, localIdx_0) * 0.80000001192092896, loadFloat_0(total_0 * 6U + idx_3, localIdx_0) * 0.80000001192092896, loadFloat_0(total_0 * 7U + idx_3, localIdx_0) * 0.80000001192092896), float3(0.0, 0.0, 0.0), float3(1.0, 1.0, 1.0));
+
+// #line 449
+    gaussian_0.opacity_0 = smoothStep_2(loadFloat_0(total_0 * 8U + idx_3, localIdx_0) * 0.89999997615814209 + 0.10000000149011612, 0.0, 1.0);
+
+
+
+    gaussian_0.sigma_0 = gaussian_0.sigma_0 * 0.00009999999747379;
+
+    return gaussian_0;
+}
+
+
+// #line 1428 "diff.meta.slang"
+void _d_dot_0(inout DiffPair_vectorx3Cfloatx2C3x3E_0 dpx_5, inout DiffPair_vectorx3Cfloatx2C3x3E_0 dpy_3, float dOut_6)
+{
+    float3 x_d_result_0;
+
+
+
+    x_d_result_0[int(0)] = dpy_3.primal_0[int(0)] * dOut_6;
+
+// #line 1430
+    float3 y_d_result_0;
+
+// #line 1435
+    y_d_result_0[int(0)] = dpx_5.primal_0[int(0)] * dOut_6;
+
+// #line 1434
+    x_d_result_0[int(1)] = dpy_3.primal_0[int(1)] * dOut_6;
+    y_d_result_0[int(1)] = dpx_5.primal_0[int(1)] * dOut_6;
+
+// #line 1434
+    x_d_result_0[int(2)] = dpy_3.primal_0[int(2)] * dOut_6;
+    y_d_result_0[int(2)] = dpx_5.primal_0[int(2)] * dOut_6;
+
+// #line 1435
+    dpx_5.primal_0 = dpx_5.primal_0;
+
+// #line 1435
+    dpx_5.differential_0 = x_d_result_0;
+
+// #line 1435
+    dpy_3.primal_0 = dpy_3.primal_0;
+
+// #line 1435
+    dpy_3.differential_0 = y_d_result_0;
+
+
+
+    return;
+}
+
+
+// #line 486 "D:/Programs/SlangU/Assets/Shaders/differentiable2dsplatter.slang"
+OBB_0 Gaussian2D_bounds_0(Gaussian2D_0 this_0)
+{
+
+// #line 486
+    bool _S17;
+
+// #line 498
+    if(abs(this_0.sigma_0[int(0)][int(1)]) < 9.99999997475242708e-07)
+    {
+
+// #line 498
+        _S17 = true;
+
+// #line 498
+    }
+    else
+    {
+
+// #line 498
+        _S17 = abs(this_0.sigma_0[int(1)][int(0)]) < 9.99999997475242708e-07;
+
+// #line 498
+    }
+
+// #line 498
+    if(_S17)
+    {
+
+// #line 504
+        return OBB_x24init_0(this_0.center_2, float2x2(float2(1.0, 0.0), float2(0.0, 1.0)), float2(sqrt(this_0.sigma_0[int(0)][int(0)]), sqrt(this_0.sigma_0[int(1)][int(1)])) * 4.0);
+    }
+    else
+    {
+        float trace_0 = this_0.sigma_0[int(0)][int(0)] + this_0.sigma_0[int(1)][int(1)];
+
+
+        float _S18 = sqrt(trace_0 * trace_0 - 4.0 * (this_0.sigma_0[int(0)][int(0)] * this_0.sigma_0[int(1)][int(1)] - this_0.sigma_0[int(0)][int(1)] * this_0.sigma_0[int(1)][int(0)]));
+
+// #line 511
+        float lambda1_0 = 0.5 * (trace_0 + _S18);
+        float lambda2_0 = 0.5 * (trace_0 - _S18);
+
+        float2x2 eigenvectors_0;
+        float2 _S19 = float2(lambda1_0 - this_0.sigma_0[int(1)][int(1)], this_0.sigma_0[int(1)][int(0)]);
+
+// #line 515
+        eigenvectors_0[int(0)] = _S19 / length(_S19);
+        float2 _S20 = float2(this_0.sigma_0[int(0)][int(1)], lambda2_0 - this_0.sigma_0[int(0)][int(0)]);
+
+// #line 516
+        eigenvectors_0[int(1)] = _S20 / length(_S20);
+
+// #line 521
+        return OBB_x24init_0(this_0.center_2, eigenvectors_0, float2(sqrt(lambda1_0), sqrt(lambda2_0)) * 4.0);
+    }
+
+// #line 521
+}
+
+
+// #line 395
+float2x2 inverse_0(float2x2 mat_0)
+{
+
+
+    float det_0 = determinant(mat_0);
+
+// #line 397
+    float2x2 output_0;
+
+
+    output_0[int(0)][int(0)] = mat_0[int(1)][int(1)] / det_0;
+    output_0[int(0)][int(1)] = - mat_0[int(0)][int(1)] / det_0;
+    output_0[int(1)][int(0)] = - mat_0[int(1)][int(0)] / det_0;
+    output_0[int(1)][int(1)] = mat_0[int(0)][int(0)] / det_0;
+
+    return output_0;
+}
+
+
+// #line 155
+bool OBB_arePtsSeparatedAlongAxes_0(float2  pts_0[int(4)], float2  otherPts_0[int(4)], float2x2 axes_0)
+{
+
+// #line 155
+    int i_0 = int(0);
+
+
+
+    for(;;)
+    {
+
+// #line 159
+        if(i_0 < int(2))
+        {
+        }
+        else
+        {
+
+// #line 159
+            break;
+        }
+
+// #line 159
+        int _S21 = i_0;
+
+
+        float _S22 = dot(pts_0[int(0)], axes_0[i_0]);
+
+// #line 162
+        float2 proj_0 = float2(_S22, _S22);
+        float _S23 = dot(otherPts_0[int(0)], axes_0[i_0]);
+
+// #line 163
+        float2 otherProj_0 = float2(_S23, _S23);
+
+// #line 163
+        int j_0 = int(1);
+
+        for(;;)
+        {
+
+// #line 165
+            if(j_0 < int(4))
+            {
+            }
+            else
+            {
+
+// #line 165
+                break;
+            }
+            proj_0[int(0)] = min(proj_0.x, dot(pts_0[j_0], axes_0[_S21]));
+            proj_0[int(1)] = max(proj_0.y, dot(pts_0[j_0], axes_0[_S21]));
+
+            otherProj_0[int(0)] = min(otherProj_0.x, dot(otherPts_0[j_0], axes_0[_S21]));
+            otherProj_0[int(1)] = max(otherProj_0.y, dot(otherPts_0[j_0], axes_0[_S21]));
+
+// #line 165
+            j_0 = j_0 + int(1);
+
+// #line 165
+        }
+
+// #line 165
+        bool _S24;
+
+// #line 174
+        if(proj_0.y < otherProj_0.x)
+        {
+
+// #line 174
+            _S24 = true;
+
+// #line 174
+        }
+        else
+        {
+
+// #line 174
+            _S24 = otherProj_0.y < proj_0.x;
+
+// #line 174
+        }
+
+// #line 174
+        if(_S24)
+        {
+
+// #line 175
+            return true;
+        }
+
+// #line 159
+        i_0 = i_0 + int(1);
+
+// #line 159
+    }
+
+// #line 178
+    return false;
+}
+
+
+// #line 133
+bool OBB_intersects_0(OBB_0 this_1, OBB_0 other_0)
+{
+    float2  _S25[int(4)] = { float2(-1.0, -1.0), float2(1.0, -1.0), float2(1.0, 1.0), float2(-1.0, 1.0) };
+
+    float2x2 _S26 = inverse_0(this_1.rotation_0);
+    float2x2 _S27 = inverse_0(other_0.rotation_0);
+    float2  pts_1[int(4)];
+
+// #line 139
+    int i_1 = int(0);
+    for(;;)
+    {
+
+// #line 140
+        if(i_1 < int(4))
+        {
+        }
+        else
+        {
+
+// #line 140
+            break;
+        }
+
+// #line 141
+        pts_1[i_1] = this_1.center_0 + float2(dot(_S26[int(0)], _S25[i_1] * this_1.scale_0), dot(_S26[int(1)], _S25[i_1] * this_1.scale_0));
+
+// #line 140
+        i_1 = i_1 + int(1);
+
+// #line 140
+    }
+
+// #line 145
+    float2  otherPts_1[int(4)];
+
+// #line 145
+    i_1 = int(0);
+    for(;;)
+    {
+
+// #line 146
+        if(i_1 < int(4))
+        {
+        }
+        else
+        {
+
+// #line 146
+            break;
+        }
+
+// #line 147
+        otherPts_1[i_1] = other_0.center_0 + float2(dot(_S27[int(0)], _S25[i_1] * other_0.scale_0), dot(_S27[int(1)], _S25[i_1] * other_0.scale_0));
+
+// #line 146
+        i_1 = i_1 + int(1);
+
+// #line 146
+    }
+
+// #line 146
+    bool _S28;
+
+// #line 151
+    if(OBB_arePtsSeparatedAlongAxes_0(pts_1, otherPts_1, this_1.rotation_0))
+    {
+
+// #line 151
+        _S28 = true;
+
+// #line 151
+    }
+    else
+    {
+
+// #line 151
+        _S28 = OBB_arePtsSeparatedAlongAxes_0(pts_1, otherPts_1, other_0.rotation_0);
+
+// #line 151
+    }
+
+// #line 151
+    return !_S28;
+}
+
+
+// #line 87
+static groupshared uint  blobs_0[int(256)];
+
+
+// #line 107
+struct FilledShortList_0
+{
+    int _dummy_1;
+};
+
+
+// #line 600
+FilledShortList_0 coarseRasterize_0(InitializedShortList_0 sList_0, OBB_0 tileBounds_0, uint localIdx_1)
+{
+    GroupMemoryBarrierWithGroupSync();
+
+
+    uint _S29 = Gaussian2D_count_0();
+
+// #line 605
+    uint i_2 = localIdx_1;
+    for(;;)
+    {
+
+// #line 606
+        if(i_2 < _S29)
+        {
+        }
+        else
+        {
+
+// #line 606
+            break;
+        }
+
+
+        if(OBB_intersects_0(Gaussian2D_bounds_0(Gaussian2D_load_0(i_2, localIdx_1)), tileBounds_0))
+        {
+            uint _S30;
+            InterlockedAdd(blobCountAT_0, 1, _S30);
+
+// #line 612
+            blobs_0[_S30] = i_2;
+
+// #line 610
+        }
+
+// #line 606
+        i_2 = i_2 + 256U;
+
+// #line 606
+    }
+
+// #line 616
+    GroupMemoryBarrierWithGroupSync();
+
+    uint _S31 = blobCountAT_0;
+
+// #line 618
+    blobCount_0 = _S31;
+
+    FilledShortList_0 _S32 = { int(0) };
+
+// #line 620
+    return _S32;
+}
+
+
+// #line 108
+struct PaddedShortList_0
+{
+    int _dummy_2;
+};
+
+
+// #line 531
+PaddedShortList_0 padBuffer_0(FilledShortList_0 SLANG_anonymous_0_1, uint localIdx_2)
+{
+    GroupMemoryBarrierWithGroupSync();
+
+    uint _S33 = blobCount_0;
+
+// #line 535
+    uint i_3 = localIdx_2;
+    for(;;)
+    {
+
+// #line 536
+        if(int(i_3) < int(256))
+        {
+        }
+        else
+        {
+
+// #line 536
+            break;
+        }
+        if(i_3 >= _S33)
+        {
+
+// #line 539
+            blobs_0[i_3] = 4294967295U;
+
+// #line 538
+        }
+
+// #line 536
+        i_3 = i_3 + 256U;
+
+// #line 536
+    }
+
+// #line 542
+    PaddedShortList_0 _S34 = { int(0) };
+
+// #line 542
+    return _S34;
+}
+
+
+// #line 109
+struct SortedShortList_0
+{
+    int _dummy_3;
+};
+
+
+// #line 556
+SortedShortList_0 bitonicSort_0(PaddedShortList_0 SLANG_anonymous_1_1, uint localIdx_3)
+{
+    GroupMemoryBarrierWithGroupSync();
+
+// #line 558
+    uint k_0 = 2U;
+
+
+    for(;;)
+    {
+
+// #line 561
+        if(int(k_0) <= int(256))
+        {
+        }
+        else
+        {
+
+// #line 561
+            break;
+        }
+
+// #line 561
+        uint j_1 = k_0 / 2U;
+
+        for(;;)
+        {
+
+// #line 563
+            if(j_1 > 0U)
+            {
+            }
+            else
+            {
+
+// #line 563
+                break;
+            }
+
+// #line 563
+            uint i_4 = localIdx_3;
+
+            for(;;)
+            {
+
+// #line 565
+                if(int(i_4) < int(256))
+                {
+                }
+                else
+                {
+
+// #line 565
+                    break;
+                }
+                uint l_0 = i_4 ^ j_1;
+                if(l_0 > i_4)
+                {
+
+// #line 568
+                    bool _S35;
+
+                    if((i_4 & k_0) == 0U)
+                    {
+
+// #line 570
+                        _S35 = blobs_0[i_4] > blobs_0[l_0];
+
+// #line 570
+                    }
+                    else
+                    {
+
+// #line 570
+                        _S35 = false;
+
+// #line 570
+                    }
+
+// #line 570
+                    bool _S36;
+
+// #line 570
+                    if(_S35)
+                    {
+
+// #line 570
+                        _S36 = true;
+
+// #line 570
+                    }
+                    else
+                    {
+
+// #line 571
+                        if((i_4 & k_0) != 0U)
+                        {
+
+// #line 571
+                            _S36 = blobs_0[i_4] < blobs_0[l_0];
+
+// #line 571
+                        }
+                        else
+                        {
+
+// #line 571
+                            _S36 = false;
+
+// #line 571
+                        }
+
+// #line 570
+                    }
+
+// #line 570
+                    if(_S36)
+                    {
+
+
+                        uint temp_0 = blobs_0[i_4];
+                        blobs_0[i_4] = blobs_0[l_0];
+                        blobs_0[l_0] = temp_0;
+
+// #line 570
+                    }
+
+// #line 568
+                }
+
+// #line 565
+                i_4 = i_4 + 256U;
+
+// #line 565
+            }
+
+// #line 581
+            GroupMemoryBarrierWithGroupSync();
+
+// #line 563
+            j_1 = j_1 / 2U;
+
+// #line 563
+        }
+
+// #line 561
+        k_0 = k_0 * 2U;
+
+// #line 561
+    }
+
+// #line 585
+    SortedShortList_0 _S37 = { int(0) };
+
+// #line 585
+    return _S37;
+}
+
+
+// #line 266
+struct PixelState_Differential_0
+{
+    float4 value_0;
+};
+
+
+// #line 843
+PixelState_Differential_0 PixelState_x24_syn_dzero_0()
+{
+
+// #line 843
+    PixelState_Differential_0 result_2;
+
+// #line 843
+    result_2.value_0 = (float4)0.0;
+
+// #line 843
+    return result_2;
+}
+
+
+// #line 843
+PixelState_Differential_0 PixelState_x24_syn_dadd_0(PixelState_Differential_0 SLANG_anonymous_0_2, PixelState_Differential_0 SLANG_anonymous_1_2)
+{
+
+// #line 843
+    PixelState_Differential_0 result_3;
+
+// #line 843
+    result_3.value_0 = SLANG_anonymous_0_2.value_0 + SLANG_anonymous_1_2.value_0;
+
+// #line 843
+    return result_3;
+}
+
+
+// #line 93
+static groupshared float4  finalVal_0[int(256)];
+
+
+// #line 92
+static groupshared uint  maxCount_0[int(256)];
+
+
+// #line 1 "token paste"
+void _d_exp_0(inout DiffPair_float_0 dpx_6, float dOut_7)
+{
+
+// #line 1
+    float _S38 = exp(dpx_6.primal_0) * dOut_7;
+
+// #line 1
+    dpx_6.primal_0 = dpx_6.primal_0;
+
+// #line 1
+    dpx_6.differential_0 = _S38;
+
+// #line 1708 "diff.meta.slang"
+    return;
+}
+
+
+// #line 473 "D:/Programs/SlangU/Assets/Shaders/differentiable2dsplatter.slang"
+float4 Gaussian2D_eval_0(Gaussian2D_0 this_2, float2 uv_0)
+{
+    float2x2 invCov_0 = inverse_0(this_2.sigma_0);
+    float2 diff_0 = uv_0 - this_2.center_2;
+    float _S39 = diff_0.x;
+    float _S40 = diff_0.y;
+
+// #line 483
+    return float4(this_2.color_0, min(0.99000000953674316, this_2.opacity_0 * exp(-0.5 * (_S39 * _S39 * invCov_0[int(0)][int(0)] + _S40 * _S40 * invCov_0[int(1)][int(1)] + _S39 * _S40 * invCov_0[int(0)][int(1)] + _S40 * _S39 * invCov_0[int(1)][int(0)]))));
+}
+
+
+// #line 624
+float4 eval_0(uint blob_id_0, float2 uv_1, uint localIdx_4)
+{
+
+    return Gaussian2D_eval_0(Gaussian2D_load_0(blob_id_0, localIdx_4), uv_1);
+}
+
+
+// #line 223
+float4 preMult_0(float4 pixel_0)
+{
+    float _S41 = pixel_0.w;
+
+// #line 225
+    return float4(pixel_0.xyz * _S41, _S41);
+}
+
+
+// #line 252
+float4 undoAlphaBlend_0(float4 pixel_1, float4 gval_0)
+{
+    float4 _S42 = preMult_0(gval_0);
+
+    float oldPixelAlpha_0 = pixel_1.w / (1.0 - _S42.w);
+    return float4(pixel_1.xyz - _S42.xyz * oldPixelAlpha_0, oldPixelAlpha_0);
+}
+
+
+// #line 266
+struct PixelState_0
+{
+    float4 value_1;
+    uint finalCount_0;
+};
+
+
+// #line 296
+PixelState_0 undoPixelState_0(PixelState_0 nextState_0, uint index_0, float4 gval_1)
+{
+    if(index_0 > nextState_0.finalCount_0)
+    {
+
+// #line 299
+        PixelState_0 _S43 = { nextState_0.value_1, nextState_0.finalCount_0 };
+
+// #line 299
+        return _S43;
+    }
+    PixelState_0 _S44 = { undoAlphaBlend_0(nextState_0.value_1, gval_1), nextState_0.finalCount_0 - 1U };
+
+// #line 301
+    return _S44;
+}
+
+
+// #line 235
+float4 alphaBlend_0(float4 pixel_2, float4 gval_2)
+{
+    float4 _S45 = preMult_0(gval_2);
+
+
+    float _S46 = pixel_2.w;
+
+// #line 239
+    return float4(pixel_2.xyz + _S45.xyz * _S46, _S46 * (1.0 - _S45.w));
+}
+
+
+// #line 282
+PixelState_0 transformPixelState_0(PixelState_0 pixel_3, float4 gval_3)
+{
+    float4 newState_0 = alphaBlend_0(pixel_3.value_1, gval_3);
+
+    if(pixel_3.value_1.w < 0.00392156885936856)
+    {
+
+// #line 287
+        PixelState_0 _S47 = { pixel_3.value_1, pixel_3.finalCount_0 };
+
+// #line 287
+        return _S47;
+    }
+    PixelState_0 _S48 = { newState_0, pixel_3.finalCount_0 + 1U };
+
+// #line 289
+    return _S48;
+}
+
+
+// #line 652
+struct DiffPair_PixelState_0
+{
+    PixelState_0 primal_0;
+    PixelState_Differential_0 differential_0;
+};
+
+
+// #line 695
+struct DiffPair_vectorx3Cfloatx2C4x3E_0
+{
+    float4 primal_0;
+    float4 differential_0;
+};
+
+
+// #line 235
+struct s_bwd_prop_alphaBlend_Intermediates_0
+{
+    float4 _S49;
+};
+
+
+// #line 282
+struct s_bwd_prop_transformPixelState_Intermediates_0
+{
+    s_bwd_prop_alphaBlend_Intermediates_0 _S50;
+};
+
+
+// #line 282
+float4 s_primal_ctx_preMult_0(float4 dppixel_0)
+{
+
+// #line 225
+    float _S51 = dppixel_0.w;
+
+// #line 225
+    return float4(dppixel_0.xyz * _S51, _S51);
+}
+
+
+// #line 225
+float4 s_primal_ctx_alphaBlend_0(float4 dppixel_1, float4 dpgval_0, out s_bwd_prop_alphaBlend_Intermediates_0 _s_diff_ctx_0)
+{
+
+// #line 235
+    _s_diff_ctx_0._S49 = (float4)0.0;
+
+// #line 235
+    float4 _S52 = s_primal_ctx_preMult_0(dpgval_0);
+
+// #line 235
+    _s_diff_ctx_0._S49 = _S52;
+
+// #line 240
+    float _S53 = dppixel_1.w;
+
+// #line 240
+    return float4(dppixel_1.xyz + _S52.xyz * _S53, _S53 * (1.0 - _S52.w));
+}
+
+
+// #line 240
+PixelState_0 s_primal_ctx_transformPixelState_0(PixelState_0 dppixel_2, float4 dpgval_1, out s_bwd_prop_transformPixelState_Intermediates_0 _s_diff_ctx_1)
+{
+
+// #line 282
+    s_bwd_prop_alphaBlend_Intermediates_0 _S54 = { (float4)0.0 };
+
+// #line 282
+    _s_diff_ctx_1._S50 = _S54;
+
+    float4 _S55 = s_primal_ctx_alphaBlend_0(dppixel_2.value_1, dpgval_1, _s_diff_ctx_1._S50);
+
+    bool _S56 = dppixel_2.value_1.w < 0.00392156885936856;
+
+// #line 286
+    PixelState_0 _S57;
+
+// #line 286
+    if(_S56)
+    {
+
+// #line 286
+        _S57.value_1 = dppixel_2.value_1;
+
+// #line 286
+        _S57.finalCount_0 = dppixel_2.finalCount_0;
+
+// #line 286
+    }
+
+// #line 286
+    bool _S58 = !_S56;
+
+// #line 286
+    if(_S58)
+    {
+
+        uint _S59 = dppixel_2.finalCount_0 + 1U;
+
+// #line 289
+        _S57.value_1 = _S55;
+
+// #line 289
+        _S57.finalCount_0 = _S59;
+
+// #line 289
+    }
+
+// #line 289
+    return _S57;
+}
+
+
+// #line 223
+void s_bwd_prop_preMult_0(inout DiffPair_vectorx3Cfloatx2C4x3E_0 dppixel_3, float4 _s_dOut_0)
+{
+    float3 _S60 = _s_dOut_0.xyz;
+
+// #line 225
+    float3 _S61 = dppixel_3.primal_0.xyz * _S60;
+
+// #line 225
+    float3 _S62 = (float3)dppixel_3.primal_0.w * _S60;
+
+// #line 225
+    float4 _S63 = float4(_S62[int(0)], _S62[int(1)], _S62[int(2)], _s_dOut_0[int(3)] + _S61[int(0)] + _S61[int(1)] + _S61[int(2)]);
+
+// #line 225
+    dppixel_3.primal_0 = dppixel_3.primal_0;
+
+// #line 225
+    dppixel_3.differential_0 = _S63;
+
+// #line 223
+    return;
+}
+
+
+// #line 235
+void s_bwd_prop_alphaBlend_0(inout DiffPair_vectorx3Cfloatx2C4x3E_0 dppixel_4, inout DiffPair_vectorx3Cfloatx2C4x3E_0 dpgval_2, float4 _s_dOut_1, s_bwd_prop_alphaBlend_Intermediates_0 _s_diff_ctx_2)
+{
+
+
+
+    float _S64 = dppixel_4.primal_0.w;
+
+// #line 239
+    float3 _S65 = _s_dOut_1.xyz;
+    float3 _S66 = _s_diff_ctx_2._S49.xyz * _S65;
+
+// #line 240
+    float3 _S67 = (float3)_S64 * _S65;
+
+// #line 240
+    float _S68 = (1.0 - _s_diff_ctx_2._S49.w) * _s_dOut_1[int(3)] + _S66[int(0)] + _S66[int(1)] + _S66[int(2)];
+
+// #line 237
+    float4 _S69 = float4(_S67[int(0)], _S67[int(1)], _S67[int(2)], - (_S64 * _s_dOut_1[int(3)]));
+
+// #line 237
+    float4 _S70 = (float4)0.0;
+
+// #line 237
+    DiffPair_vectorx3Cfloatx2C4x3E_0 _S71;
+
+// #line 237
+    _S71.primal_0 = dpgval_2.primal_0;
+
+// #line 237
+    _S71.differential_0 = _S70;
+
+// #line 237
+    s_bwd_prop_preMult_0(_S71, _S69);
+
+// #line 237
+    dpgval_2.primal_0 = dpgval_2.primal_0;
+
+// #line 237
+    dpgval_2.differential_0 = _S71.differential_0;
+
+// #line 237
+    float4 _S72 = float4(_S65[int(0)], _S65[int(1)], _S65[int(2)], _S68);
+
+// #line 237
+    dppixel_4.primal_0 = dppixel_4.primal_0;
+
+// #line 237
+    dppixel_4.differential_0 = _S72;
+
+// #line 235
+    return;
+}
+
+
+// #line 282
+void s_bwd_prop_transformPixelState_0(inout DiffPair_PixelState_0 dppixel_5, inout DiffPair_vectorx3Cfloatx2C4x3E_0 dpgval_3, PixelState_Differential_0 _s_dOut_2, s_bwd_prop_transformPixelState_Intermediates_0 _s_diff_ctx_3)
+{
+
+// #line 282
+    DiffPair_PixelState_0 _S73 = dppixel_5;
+
+// #line 282
+    DiffPair_vectorx3Cfloatx2C4x3E_0 _S74 = dpgval_3;
+
+
+
+    bool _S75 = dppixel_5.primal_0.value_1.w < 0.00392156885936856;
+
+// #line 1281 "core.meta.slang"
+    float4 _S76 = (float4)0.0;
+
+// #line 1281
+    PixelState_Differential_0 _S77 = PixelState_x24_syn_dzero_0();
+
+// #line 1281
+    PixelState_Differential_0 _S78 = PixelState_x24_syn_dadd_0(_s_dOut_2, _S77);
+
+// #line 1281
+    PixelState_Differential_0 _S79;
+
+// #line 1281
+    float4 _S80;
+
+// #line 1281
+    if(!_S75)
+    {
+
+// #line 1281
+        _S79 = _S77;
+
+// #line 1281
+        _S80 = _S78.value_0;
+
+// #line 1281
+    }
+    else
+    {
+
+// #line 1281
+        _S79 = PixelState_x24_syn_dadd_0(_S78, _S77);
+
+// #line 1281
+        _S80 = _S76;
+
+// #line 1281
+    }
+
+// #line 1281
+    float4 _S81;
+
+// #line 1281
+    if(_S75)
+    {
+
+// #line 1281
+        _S81 = _S79.value_0;
+
+// #line 1281
+    }
+    else
+    {
+
+// #line 1281
+        _S81 = _S76;
+
+// #line 1281
+    }
+
+// #line 284 "D:/Programs/SlangU/Assets/Shaders/differentiable2dsplatter.slang"
+    DiffPair_vectorx3Cfloatx2C4x3E_0 _S82;
+
+// #line 284
+    _S82.primal_0 = _S73.primal_0.value_1;
+
+// #line 284
+    _S82.differential_0 = _S76;
+
+// #line 284
+    DiffPair_vectorx3Cfloatx2C4x3E_0 _S83;
+
+// #line 284
+    _S83.primal_0 = _S74.primal_0;
+
+// #line 284
+    _S83.differential_0 = _S76;
+
+// #line 284
+    s_bwd_prop_alphaBlend_0(_S82, _S83, _S80, _s_diff_ctx_3._S50);
+
+// #line 284
+    float4 _S84 = _S82.differential_0 + _S81;
+
+// #line 284
+    dpgval_3.primal_0 = dpgval_3.primal_0;
+
+// #line 284
+    dpgval_3.differential_0 = _S83.differential_0;
+
+// #line 284
+    PixelState_Differential_0 _S85 = _S77;
+
+// #line 284
+    _S85.value_0 = _S84;
+
+// #line 284
+    dppixel_5.primal_0 = dppixel_5.primal_0;
+
+// #line 284
+    dppixel_5.differential_0 = _S85;
+
+// #line 282
+    return;
+}
+
+
+// #line 282
+void s_bwd_transformPixelState_0(inout DiffPair_PixelState_0 _S86, inout DiffPair_vectorx3Cfloatx2C4x3E_0 _S87, PixelState_Differential_0 _S88)
+{
+
+// #line 282
+    s_bwd_prop_transformPixelState_Intermediates_0 _S89;
+
+// #line 282
+    PixelState_0 _S90 = s_primal_ctx_transformPixelState_0(_S86.primal_0, _S87.primal_0, _S89);
+
+// #line 282
+    s_bwd_prop_transformPixelState_0(_S86, _S87, _S88, _S89);
+
+// #line 282
+    return;
+}
+
+
+// #line 203
+struct s_bwd_prop_smoothStep_Intermediates_0
+{
+    float2 _S91;
+};
+
+
+
+
+struct s_bwd_prop_smoothStep_Intermediates_1
+{
+    float _S92;
+};
+
+
+// #line 203
+struct s_bwd_prop_smoothStep_Intermediates_2
+{
+    float3 _S93;
+};
+
+
+// #line 416
+struct s_bwd_prop_Gaussian2D_load_Intermediates_0
+{
+    s_bwd_prop_smoothStep_Intermediates_0 _S94;
+    s_bwd_prop_smoothStep_Intermediates_1 _S95;
+    s_bwd_prop_smoothStep_Intermediates_1 _S96;
+    s_bwd_prop_smoothStep_Intermediates_1 _S97;
+    s_bwd_prop_smoothStep_Intermediates_2 _S98;
+    s_bwd_prop_smoothStep_Intermediates_1 _S99;
+    uint total_1;
+    float _S100;
+    float _S101;
+    float2 _S102;
+    float _S103;
+    float _S104;
+    float _S105;
+    float _S106;
+    float _S107;
+    float _S108;
+    float _S109;
+    float _S110;
+    float _S111;
+    float _S112;
+    float _S113;
+};
+
+
+// #line 395
+struct s_bwd_prop_inverse_Intermediates_0
+{
+    float _S114;
+};
+
+
+// #line 473
+struct s_bwd_prop_Gaussian2D_eval_Intermediates_0
+{
+    s_bwd_prop_inverse_Intermediates_0 _S115;
+    float2x2 _S116;
+    float _S117;
+};
+
+
+// #line 624
+struct s_bwd_prop_eval_Intermediates_0
+{
+    s_bwd_prop_Gaussian2D_load_Intermediates_0 _S118;
+    s_bwd_prop_Gaussian2D_eval_Intermediates_0 _S119;
+    Gaussian2D_0 _S120;
+};
+
+
+// #line 624
+float s_primal_ctx_loadFloat_0(uint _S121, uint _S122)
+{
+
+// #line 624
+    return loadFloat_0(_S121, _S122);
+}
+
+
+// #line 624
+float2 s_primal_ctx_clamp_0(float2 _S123, float2 _S124, float2 _S125)
+{
+
+// #line 624
+    return clamp(_S123, _S124, _S125);
+}
+
+
+// #line 624
+float2 s_primal_ctx_smoothStep_0(float2 dpx_7, float2 dpminval_0, float2 dpmaxval_0, out s_bwd_prop_smoothStep_Intermediates_0 _s_diff_ctx_4)
+{
+
+// #line 203
+    _s_diff_ctx_4._S91 = (float2)0.0;
+
+// #line 203
+    float2 _S126 = s_primal_ctx_clamp_0((dpx_7 - dpminval_0) / (dpmaxval_0 - dpminval_0), (float2)0.0, (float2)1.0);
+
+// #line 203
+    _s_diff_ctx_4._S91 = _S126;
+
+// #line 203
+    return _S126 * _S126 * (3.0 - 2.0 * _S126);
+}
+
+
+// #line 203
+float s_primal_ctx_clamp_1(float _S127, float _S128, float _S129)
+{
+
+// #line 203
+    return clamp(_S127, _S128, _S129);
+}
+
+
+// #line 203
+float s_primal_ctx_smoothStep_1(float dpx_8, float dpminval_1, float dpmaxval_1, out s_bwd_prop_smoothStep_Intermediates_1 _s_diff_ctx_5)
+{
+
+// #line 211
+    _s_diff_ctx_5._S92 = 0.0;
+
+// #line 211
+    float _S130 = s_primal_ctx_clamp_1((dpx_8 - dpminval_1) / (dpmaxval_1 - dpminval_1), 0.0, 1.0);
+
+// #line 211
+    _s_diff_ctx_5._S92 = _S130;
+
+// #line 211
+    return _S130 * _S130 * (3.0 - 2.0 * _S130);
+}
+
+
+// #line 211
+float s_primal_ctx_sqrt_0(float _S131)
+{
+
+// #line 211
+    return sqrt(_S131);
+}
+
+
+// #line 211
+float3 s_primal_ctx_clamp_2(float3 _S132, float3 _S133, float3 _S134)
+{
+
+// #line 211
+    return clamp(_S132, _S133, _S134);
+}
+
+
+// #line 211
+float3 s_primal_ctx_smoothStep_2(float3 dpx_9, float3 dpminval_2, float3 dpmaxval_2, out s_bwd_prop_smoothStep_Intermediates_2 _s_diff_ctx_6)
+{
+
+// #line 203
+    _s_diff_ctx_6._S93 = (float3)0.0;
+
+// #line 203
+    float3 _S135 = s_primal_ctx_clamp_2((dpx_9 - dpminval_2) / (dpmaxval_2 - dpminval_2), (float3)0.0, (float3)1.0);
+
+// #line 203
+    _s_diff_ctx_6._S93 = _S135;
+
+// #line 203
+    return _S135 * _S135 * (3.0 - 2.0 * _S135);
+}
+
+
+// #line 203
+Gaussian2D_0 s_primal_ctx_Gaussian2D_load_0(uint idx_4, uint localIdx_5, out s_bwd_prop_Gaussian2D_load_Intermediates_0 _s_diff_ctx_7)
+{
+
+// #line 416
+    float2 _S136 = (float2)0.0;
+
+// #line 416
+    s_bwd_prop_smoothStep_Intermediates_0 _S137 = { _S136 };
+
+// #line 416
+    s_bwd_prop_smoothStep_Intermediates_1 _S138 = { 0.0 };
+
+// #line 416
+    float3 _S139 = (float3)0.0;
+
+// #line 416
+    s_bwd_prop_smoothStep_Intermediates_2 _S140 = { _S139 };
+
+// #line 416
+    _s_diff_ctx_7._S94 = _S137;
+
+// #line 416
+    _s_diff_ctx_7._S95 = _S138;
+
+// #line 416
+    _s_diff_ctx_7._S96 = _S138;
+
+// #line 416
+    _s_diff_ctx_7._S97 = _S138;
+
+// #line 416
+    _s_diff_ctx_7._S98 = _S140;
+
+// #line 416
+    _s_diff_ctx_7._S99 = _S138;
+
+// #line 416
+    _s_diff_ctx_7.total_1 = 0U;
+
+// #line 416
+    _s_diff_ctx_7._S100 = 0.0;
+
+// #line 416
+    _s_diff_ctx_7._S101 = 0.0;
+
+// #line 416
+    _s_diff_ctx_7._S102 = _S136;
+
+// #line 416
+    _s_diff_ctx_7._S103 = 0.0;
+
+// #line 416
+    _s_diff_ctx_7._S104 = 0.0;
+
+// #line 416
+    _s_diff_ctx_7._S105 = 0.0;
+
+// #line 416
+    _s_diff_ctx_7._S106 = 0.0;
+
+// #line 416
+    _s_diff_ctx_7._S107 = 0.0;
+
+// #line 416
+    _s_diff_ctx_7._S108 = 0.0;
+
+// #line 416
+    _s_diff_ctx_7._S109 = 0.0;
+
+// #line 416
+    _s_diff_ctx_7._S110 = 0.0;
+
+// #line 416
+    _s_diff_ctx_7._S111 = 0.0;
+
+// #line 416
+    _s_diff_ctx_7._S112 = 0.0;
+
+// #line 416
+    _s_diff_ctx_7._S113 = 0.0;
+
+    uint total_2 = Gaussian2D_count_0();
+
+// #line 418
+    _s_diff_ctx_7.total_1 = total_2;
+    float2x2 _S141 = float2x2(0.0, 0.0, 0.0, 0.0);
+
+// #line 419
+    float _S142 = s_primal_ctx_loadFloat_0(idx_4, localIdx_5);
+
+// #line 419
+    _s_diff_ctx_7._S100 = _S142;
+
+// #line 419
+    float _S143 = s_primal_ctx_loadFloat_0(total_2 + idx_4, localIdx_5);
+
+// #line 419
+    _s_diff_ctx_7._S101 = _S143;
+
+    float2 _S144 = s_primal_ctx_smoothStep_0(float2(_S142, _S143), float2(0.0, 0.0), float2(1.0, 1.0), _s_diff_ctx_7._S94);
+
+// #line 421
+    _s_diff_ctx_7._S102 = _S144;
+
+// #line 421
+    float _S145 = s_primal_ctx_loadFloat_0(total_2 * 2U + idx_4, localIdx_5);
+
+// #line 421
+    _s_diff_ctx_7._S103 = _S145;
+
+// #line 429
+    float _S146 = s_primal_ctx_smoothStep_1(_S145 * 0.80000001192092896, 0.0, 1.0, _s_diff_ctx_7._S95);
+
+// #line 429
+    _s_diff_ctx_7._S104 = _S146;
+    float _S147 = _S146 + 0.00499999988824129;
+
+// #line 430
+    Gaussian2D_0 _S148;
+
+// #line 430
+    _S148.center_2 = _S144;
+
+// #line 430
+    _S148.sigma_0 = _S141;
+
+// #line 430
+    _S148.color_0 = _S139;
+
+// #line 430
+    _S148.opacity_0 = 0.0;
+
+// #line 430
+    _S148.sigma_0[int(0)][int(0)] = _S147;
+
+// #line 430
+    float _S149 = s_primal_ctx_loadFloat_0(total_2 * 3U + idx_4, localIdx_5);
+
+// #line 430
+    _s_diff_ctx_7._S105 = _S149;
+    float _S150 = s_primal_ctx_smoothStep_1(_S149 * 0.80000001192092896, 0.0, 1.0, _s_diff_ctx_7._S96);
+
+// #line 431
+    _s_diff_ctx_7._S106 = _S150;
+    float _S151 = _S150 + 0.00499999988824129;
+
+// #line 432
+    _S148.sigma_0[int(1)][int(1)] = _S151;
+
+// #line 432
+    float _S152 = s_primal_ctx_loadFloat_0(total_2 * 4U + idx_4, localIdx_5);
+
+// #line 432
+    _s_diff_ctx_7._S107 = _S152;
+
+    float _S153 = s_primal_ctx_smoothStep_1(_S152 * 0.60000002384185791, 0.0, 1.0, _s_diff_ctx_7._S97);
+
+// #line 434
+    _s_diff_ctx_7._S108 = _S153;
+    float aniso_1 = (_S153 - 0.5) * 1.64999997615814209;
+
+// #line 435
+    float _S154 = s_primal_ctx_sqrt_0(_S147 * _S151);
+
+// #line 435
+    _s_diff_ctx_7._S109 = _S154;
+
+    float _S155 = _S154 * aniso_1;
+
+// #line 437
+    _S148.sigma_0[int(0)][int(1)] = _S155;
+
+// #line 437
+    _S148.sigma_0[int(1)][int(0)] = _S155;
+
+// #line 437
+    float _S156 = s_primal_ctx_loadFloat_0(total_2 * 5U + idx_4, localIdx_5);
+
+// #line 437
+    _s_diff_ctx_7._S110 = _S156;
+
+// #line 443
+    float _S157 = _S156 * 0.80000001192092896;
+
+// #line 443
+    float _S158 = s_primal_ctx_loadFloat_0(total_2 * 6U + idx_4, localIdx_5);
+
+// #line 443
+    _s_diff_ctx_7._S111 = _S158;
+    float _S159 = _S158 * 0.80000001192092896;
+
+// #line 444
+    float _S160 = s_primal_ctx_loadFloat_0(total_2 * 7U + idx_4, localIdx_5);
+
+// #line 444
+    _s_diff_ctx_7._S112 = _S160;
+
+// #line 441
+    float3 _S161 = s_primal_ctx_smoothStep_2(float3(_S157, _S159, _S160 * 0.80000001192092896), float3(0.0, 0.0, 0.0), float3(1.0, 1.0, 1.0), _s_diff_ctx_7._S98);
+
+// #line 441
+    Gaussian2D_0 _S162 = _S148;
+
+// #line 441
+    _S162.color_0 = _S161;
+
+// #line 441
+    float _S163 = s_primal_ctx_loadFloat_0(total_2 * 8U + idx_4, localIdx_5);
+
+// #line 441
+    _s_diff_ctx_7._S113 = _S163;
+
+// #line 449
+    float _S164 = s_primal_ctx_smoothStep_1(_S163 * 0.89999997615814209 + 0.10000000149011612, 0.0, 1.0, _s_diff_ctx_7._S99);
+
+// #line 449
+    _S162.opacity_0 = _S164;
+
+// #line 449
+    _S162.sigma_0 = _S148.sigma_0 * 0.00009999999747379;
+
+// #line 449
+    return _S162;
+}
+
+
+// #line 449
+float s_primal_ctx_determinant_0(float2x2 _S165)
+{
+
+// #line 449
+    return determinant(_S165);
+}
+
+
+// #line 449
+float2x2 s_primal_ctx_inverse_0(float2x2 dpmat_0, out s_bwd_prop_inverse_Intermediates_0 _s_diff_ctx_8)
+{
+
+// #line 395
+    _s_diff_ctx_8._S114 = 0.0;
+
+    float2x2 _S166 = float2x2(0.0, 0.0, 0.0, 0.0);
+
+// #line 397
+    float _S167 = s_primal_ctx_determinant_0(dpmat_0);
+
+// #line 397
+    _s_diff_ctx_8._S114 = _S167;
+
+
+    float _S168 = dpmat_0[int(1)][int(1)] / _S167;
+
+// #line 400
+    float2x2 _S169 = _S166;
+
+// #line 400
+    _S169[int(0)][int(0)] = _S168;
+
+// #line 400
+    _S169[int(0)][int(1)] = - dpmat_0[int(0)][int(1)] / _S167;
+
+// #line 400
+    _S169[int(1)][int(0)] = - dpmat_0[int(1)][int(0)] / _S167;
+
+// #line 400
+    _S169[int(1)][int(1)] = dpmat_0[int(0)][int(0)] / _S167;
+
+// #line 400
+    return _S169;
+}
+
+
+// #line 400
+float s_primal_ctx_exp_0(float _S170)
+{
+
+// #line 400
+    return exp(_S170);
+}
+
+
+// #line 400
+float s_primal_ctx_min_0(float _S171, float _S172)
+{
+
+// #line 400
+    return min(_S171, _S172);
+}
+
+
+// #line 400
+float4 s_primal_ctx_Gaussian2D_eval_0(Gaussian2D_0 dpthis_0, float2 dpuv_0, out s_bwd_prop_Gaussian2D_eval_Intermediates_0 _s_diff_ctx_9)
+{
+
+// #line 473
+    s_bwd_prop_inverse_Intermediates_0 _S173 = { 0.0 };
+
+// #line 473
+    float2x2 _S174 = float2x2(0.0, 0.0, 0.0, 0.0);
+
+// #line 473
+    _s_diff_ctx_9._S115 = _S173;
+
+// #line 473
+    _s_diff_ctx_9._S116 = _S174;
+
+// #line 473
+    _s_diff_ctx_9._S117 = 0.0;
+
+    float2x2 _S175 = s_primal_ctx_inverse_0(dpthis_0.sigma_0, _s_diff_ctx_9._S115);
+
+// #line 475
+    _s_diff_ctx_9._S116 = _S175;
+    float2 diff_1 = dpuv_0 - dpthis_0.center_2;
+    float _S176 = diff_1.x;
+    float _S177 = diff_1.y;
+
+// #line 478
+    float _S178 = s_primal_ctx_exp_0(-0.5 * (_S176 * _S176 * _S175[int(0)][int(0)] + _S177 * _S177 * _S175[int(1)][int(1)] + _S176 * _S177 * _S175[int(0)][int(1)] + _S177 * _S176 * _S175[int(1)][int(0)]));
+
+// #line 478
+    _s_diff_ctx_9._S117 = _S178;
+
+// #line 478
+    return float4(dpthis_0.color_0, s_primal_ctx_min_0(0.99000000953674316, dpthis_0.opacity_0 * _S178));
+}
+
+
+// #line 478
+float4 s_primal_ctx_eval_0(uint blob_id_1, float2 uv_2, uint localIdx_6, out s_bwd_prop_eval_Intermediates_0 _s_diff_ctx_10)
+{
+
+// #line 624
+    float2 _S179 = (float2)0.0;
+
+// #line 624
+    s_bwd_prop_smoothStep_Intermediates_0 _S180 = { _S179 };
+
+// #line 624
+    s_bwd_prop_smoothStep_Intermediates_1 _S181 = { 0.0 };
+
+// #line 624
+    float3 _S182 = (float3)0.0;
+
+// #line 624
+    s_bwd_prop_smoothStep_Intermediates_2 _S183 = { _S182 };
+
+// #line 624
+    s_bwd_prop_Gaussian2D_load_Intermediates_0 _S184 = { _S180, _S181, _S181, _S181, _S183, _S181, 0U, 0.0, 0.0, _S179, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+
+// #line 624
+    s_bwd_prop_inverse_Intermediates_0 _S185 = { 0.0 };
+
+// #line 624
+    float2x2 _S186 = float2x2(0.0, 0.0, 0.0, 0.0);
+
+// #line 624
+    s_bwd_prop_Gaussian2D_eval_Intermediates_0 _S187 = { _S185, _S186, 0.0 };
+
+// #line 624
+    Gaussian2D_0 _S188 = { _S179, _S186, _S182, 0.0 };
+
+// #line 624
+    _s_diff_ctx_10._S118 = _S184;
+
+// #line 624
+    _s_diff_ctx_10._S119 = _S187;
+
+// #line 624
+    _s_diff_ctx_10._S120 = _S188;
+
+    Gaussian2D_0 _S189 = s_primal_ctx_Gaussian2D_load_0(blob_id_1, localIdx_6, _s_diff_ctx_10._S118);
+
+// #line 626
+    _s_diff_ctx_10._S120 = _S189;
+    float4 _S190 = s_primal_ctx_Gaussian2D_eval_0(_S189, uv_2, _s_diff_ctx_10._S119);
+
+// #line 627
+    return _S190;
+}
+
+
+// #line 627
+struct DiffPair_Gaussian2D_0
+{
+    Gaussian2D_0 primal_0;
+    Gaussian2D_0 differential_0;
+};
+
+
+// #line 627
+void s_bwd_prop_min_0(inout DiffPair_float_0 _S191, inout DiffPair_float_0 _S192, float _S193)
+{
+
+// #line 627
+    _d_min_0(_S191, _S192, _S193);
+
+// #line 627
+    return;
+}
+
+
+// #line 627
+void s_bwd_prop_exp_0(inout DiffPair_float_0 _S194, float _S195)
+{
+
+// #line 627
+    _d_exp_0(_S194, _S195);
+
+// #line 627
+    return;
+}
+
+
+// #line 627
+struct DiffPair_matrixx3Cfloatx2C2x2C2x3E_0
+{
+    float2x2 primal_0;
+    float2x2 differential_0;
+};
+
+
+// #line 2273 "diff.meta.slang"
+void s_bwd_prop_determinant_impl_0(inout DiffPair_matrixx3Cfloatx2C2x2C2x3E_0 dpm_0, float _s_dOut_3)
+{
+
+// #line 2273
+    float _S196 = - _s_dOut_3;
+
+// #line 2273
+    float _S197 = dpm_0.primal_0[int(0)][int(1)] * _S196;
+
+// #line 2273
+    float _S198 = dpm_0.primal_0[int(1)][int(0)] * _S196;
+
+// #line 2273
+    float _S199 = dpm_0.primal_0[int(0)][int(0)] * _s_dOut_3;
+
+// #line 2273
+    float _S200 = dpm_0.primal_0[int(1)][int(1)] * _s_dOut_3;
+
+// #line 1281 "core.meta.slang"
+    float2 _S201 = (float2)0.0;
+
+// #line 1281
+    float2 _S202 = _S201;
+
+// #line 1281
+    _S202[int(0)] = _S197;
+
+// #line 1281
+    _S202[int(1)] = _S199;
+
+// #line 1281
+    float2 _S203 = _S201;
+
+// #line 1281
+    _S203[int(1)] = _S198;
+
+// #line 1281
+    _S203[int(0)] = _S200;
+
+// #line 1281
+    float2x2 _S204 = float2x2(0.0, 0.0, 0.0, 0.0);
+
+// #line 1281
+    _S204[int(1)] = _S202;
+
+// #line 1281
+    _S204[int(0)] = _S203;
+
+// #line 1281
+    dpm_0.primal_0 = dpm_0.primal_0;
+
+// #line 1281
+    dpm_0.differential_0 = _S204;
+
+// #line 2273 "diff.meta.slang"
+    return;
+}
+
+
+// #line 2273
+void s_bwd_determinant_impl_0(inout DiffPair_matrixx3Cfloatx2C2x2C2x3E_0 _S205, float _S206)
+{
+
+// #line 2273
+    s_bwd_prop_determinant_impl_0(_S205, _S206);
+
+// #line 2273
+    return;
+}
+
+
+// #line 2273
+void s_bwd_prop_determinant_0(inout DiffPair_matrixx3Cfloatx2C2x2C2x3E_0 _S207, float _S208)
+{
+
+// #line 2319
+    s_bwd_determinant_impl_0(_S207, _S208);
+
+// #line 2319
+    return;
+}
+
+
+// #line 395 "D:/Programs/SlangU/Assets/Shaders/differentiable2dsplatter.slang"
+void s_bwd_prop_inverse_0(inout DiffPair_matrixx3Cfloatx2C2x2C2x3E_0 dpmat_1, float2x2 _s_dOut_4, s_bwd_prop_inverse_Intermediates_0 _s_diff_ctx_11)
+{
+
+
+
+    float _S209 = _s_diff_ctx_11._S114;
+
+// #line 400
+    float _S210 = _S209 * _S209;
+
+
+    float _S211 = _s_dOut_4[int(1)][int(1)] / _S210;
+
+// #line 403
+    float _S212 = dpmat_1.primal_0[int(0)][int(0)] * - _S211;
+
+// #line 403
+    float _S213 = _s_diff_ctx_11._S114 * _S211;
+
+// #line 402
+    float _S214 = _s_dOut_4[int(1)][int(0)] / _S210;
+
+// #line 402
+    float _S215 = - dpmat_1.primal_0[int(1)][int(0)] * - _S214;
+
+// #line 402
+    float _S216 = - (_s_diff_ctx_11._S114 * _S214);
+
+// #line 401
+    float _S217 = _s_dOut_4[int(0)][int(1)] / _S210;
+
+// #line 401
+    float _S218 = - dpmat_1.primal_0[int(0)][int(1)] * - _S217;
+
+// #line 401
+    float _S219 = - (_s_diff_ctx_11._S114 * _S217);
+
+// #line 1281 "core.meta.slang"
+    float2 _S220 = (float2)0.0;
+
+// #line 1281
+    float2 _S221 = _S220;
+
+// #line 1281
+    _S221[int(0)] = _S213;
+
+// #line 1281
+    _S221[int(1)] = _S219;
+
+// #line 400 "D:/Programs/SlangU/Assets/Shaders/differentiable2dsplatter.slang"
+    float _S222 = _s_dOut_4[int(0)][int(0)] / _S210;
+
+// #line 400
+    float _S223 = dpmat_1.primal_0[int(1)][int(1)] * - _S222;
+
+// #line 400
+    float _S224 = _s_diff_ctx_11._S114 * _S222;
+
+// #line 400
+    float2 _S225 = _S220;
+
+// #line 400
+    _S225[int(0)] = _S216;
+
+// #line 400
+    _S225[int(1)] = _S224;
+
+// #line 399
+    float _S226 = _S212 + _S215 + _S218 + _S223;
+
+// #line 399
+    float2x2 _S227 = float2x2(0.0, 0.0, 0.0, 0.0);
+
+// #line 399
+    DiffPair_matrixx3Cfloatx2C2x2C2x3E_0 _S228;
+
+// #line 399
+    _S228.primal_0 = dpmat_1.primal_0;
+
+// #line 399
+    _S228.differential_0 = _S227;
+
+// #line 399
+    s_bwd_prop_determinant_0(_S228, _S226);
+
+// #line 399
+    float2x2 _S229 = _S227;
+
+// #line 399
+    _S229[int(0)] = _S221;
+
+// #line 399
+    _S229[int(1)] = _S225;
+
+// #line 399
+    float2x2 _S230 = _S228.differential_0 + _S229;
+
+// #line 399
+    dpmat_1.primal_0 = dpmat_1.primal_0;
+
+// #line 399
+    dpmat_1.differential_0 = _S230;
+
+// #line 395
+    return;
+}
+
+
+// #line 473
+void s_bwd_prop_Gaussian2D_eval_0(inout DiffPair_Gaussian2D_0 dpthis_1, inout DiffPair_vectorx3Cfloatx2C2x3E_0 dpuv_1, float4 _s_dOut_5, s_bwd_prop_Gaussian2D_eval_Intermediates_0 _s_diff_ctx_12)
+{
+
+    float2 diff_2 = dpuv_1.primal_0 - dpthis_1.primal_0.center_2;
+    float _S231 = diff_2.x;
+
+// #line 477
+    float _S232 = _S231 * _S231;
+    float _S233 = diff_2.y;
+
+// #line 478
+    float _S234 = _S233 * _S233;
+    float _S235 = _S231 * _S233;
+    float _S236 = _S233 * _S231;
+
+// #line 477
+    float power_0 = -0.5 * (_S232 * _s_diff_ctx_12._S116[int(0)][int(0)] + _S234 * _s_diff_ctx_12._S116[int(1)][int(1)] + _S235 * _s_diff_ctx_12._S116[int(0)][int(1)] + _S236 * _s_diff_ctx_12._S116[int(1)][int(0)]);
+
+// #line 482
+    float _S237 = dpthis_1.primal_0.opacity_0 * _s_diff_ctx_12._S117;
+    float3 _S238 = _s_dOut_5.xyz;
+
+// #line 482
+    DiffPair_float_0 _S239;
+
+// #line 482
+    _S239.primal_0 = 0.99000000953674316;
+
+// #line 482
+    _S239.differential_0 = 0.0;
+
+// #line 482
+    DiffPair_float_0 _S240;
+
+// #line 482
+    _S240.primal_0 = _S237;
+
+// #line 482
+    _S240.differential_0 = 0.0;
+
+// #line 482
+    s_bwd_prop_min_0(_S239, _S240, _s_dOut_5[int(3)]);
+
+// #line 482
+    float _S241 = dpthis_1.primal_0.opacity_0 * _S240.differential_0;
+
+// #line 482
+    float _S242 = _s_diff_ctx_12._S117 * _S240.differential_0;
+
+// #line 482
+    DiffPair_float_0 _S243;
+
+// #line 482
+    _S243.primal_0 = power_0;
+
+// #line 482
+    _S243.differential_0 = 0.0;
+
+// #line 482
+    s_bwd_prop_exp_0(_S243, _S241);
+
+// #line 477
+    float _S244 = -0.5 * _S243.differential_0;
+
+
+    float _S245 = _S236 * _S244;
+
+// #line 480
+    float _S246 = _s_diff_ctx_12._S116[int(1)][int(0)] * _S244;
+
+// #line 480
+    float _S247 = _S233 * _S246;
+
+// #line 480
+    float _S248 = _S231 * _S246;
+
+// #line 479
+    float _S249 = _S235 * _S244;
+
+// #line 479
+    float _S250 = _s_diff_ctx_12._S116[int(0)][int(1)] * _S244;
+
+// #line 479
+    float _S251 = _S231 * _S250;
+
+// #line 479
+    float _S252 = _S233 * _S250;
+
+// #line 478
+    float _S253 = _S234 * _S244;
+
+// #line 478
+    float _S254 = _s_diff_ctx_12._S116[int(1)][int(1)] * _S244;
+
+// #line 1281 "core.meta.slang"
+    float2 _S255 = (float2)0.0;
+
+// #line 1281
+    float2 _S256 = _S255;
+
+// #line 1281
+    _S256[int(0)] = _S245;
+
+// #line 1281
+    _S256[int(1)] = _S253;
+
+// #line 478 "D:/Programs/SlangU/Assets/Shaders/differentiable2dsplatter.slang"
+    float _S257 = _S233 * _S254;
+
+// #line 478
+    float _S258 = _S248 + _S251 + _S257 + _S257;
+
+// #line 477
+    float _S259 = _S232 * _S244;
+
+// #line 477
+    float _S260 = _s_diff_ctx_12._S116[int(0)][int(0)] * _S244;
+
+// #line 477
+    float2 _S261 = _S255;
+
+// #line 477
+    _S261[int(1)] = _S249;
+
+// #line 477
+    _S261[int(0)] = _S259;
+
+// #line 477
+    float _S262 = _S231 * _S260;
+
+// #line 476
+    float2 s_diff_diff_T_0 = float2(_S247 + _S252 + _S262 + _S262, _S258);
+
+// #line 476
+    float2 _S263 = - s_diff_diff_T_0;
+
+// #line 475
+    float2x2 _S264 = float2x2(0.0, 0.0, 0.0, 0.0);
+
+// #line 475
+    float2x2 _S265 = _S264;
+
+// #line 475
+    _S265[int(1)] = _S256;
+
+// #line 475
+    _S265[int(0)] = _S261;
+
+// #line 475
+    DiffPair_matrixx3Cfloatx2C2x2C2x3E_0 _S266;
+
+// #line 475
+    _S266.primal_0 = dpthis_1.primal_0.sigma_0;
+
+// #line 475
+    _S266.differential_0 = _S264;
+
+// #line 475
+    s_bwd_prop_inverse_0(_S266, _S265, _s_diff_ctx_12._S115);
+
+// #line 475
+    dpuv_1.primal_0 = dpuv_1.primal_0;
+
+// #line 475
+    dpuv_1.differential_0 = s_diff_diff_T_0;
+
+// #line 475
+    Gaussian2D_0 _S267 = Gaussian2D_x24_syn_dzero_0();
+
+// #line 475
+    _S267.color_0 = _S238;
+
+// #line 475
+    _S267.opacity_0 = _S242;
+
+// #line 475
+    _S267.center_2 = _S263;
+
+// #line 475
+    _S267.sigma_0 = _S266.differential_0;
+
+// #line 475
+    dpthis_1.primal_0 = dpthis_1.primal_0;
+
+// #line 475
+    dpthis_1.differential_0 = _S267;
+
+// #line 473
+    return;
+}
+
+
+// #line 473
+void s_bwd_prop_clamp_0(inout DiffPair_float_0 _S268, inout DiffPair_float_0 _S269, inout DiffPair_float_0 _S270, float _S271)
+{
+
+// #line 473
+    _d_clamp_0(_S268, _S269, _S270, _S271);
+
+// #line 473
+    return;
+}
+
+
+// #line 211
+void s_bwd_prop_smoothStep_0(inout DiffPair_float_0 dpx_10, inout DiffPair_float_0 dpminval_3, inout DiffPair_float_0 dpmaxval_3, float _s_dOut_6, s_bwd_prop_smoothStep_Intermediates_1 _s_diff_ctx_13)
+{
+    float _S272 = dpx_10.primal_0 - dpminval_3.primal_0;
+
+// #line 213
+    float _S273 = dpmaxval_3.primal_0 - dpminval_3.primal_0;
+
+// #line 213
+    float _S274 = _S273 * _S273;
+    float _S275 = _s_diff_ctx_13._S92;
+
+// #line 214
+    float _S276 = _s_diff_ctx_13._S92 * ((3.0 - 2.0 * _s_diff_ctx_13._S92) * _s_dOut_6);
+
+// #line 213
+    float _S277 = 2.0 * - (_S275 * _S275 * _s_dOut_6) + _S276 + _S276;
+
+// #line 213
+    DiffPair_float_0 _S278;
+
+// #line 213
+    _S278.primal_0 = _S272 / _S273;
+
+// #line 213
+    _S278.differential_0 = 0.0;
+
+// #line 213
+    DiffPair_float_0 _S279;
+
+// #line 213
+    _S279.primal_0 = 0.0;
+
+// #line 213
+    _S279.differential_0 = 0.0;
+
+// #line 213
+    DiffPair_float_0 _S280;
+
+// #line 213
+    _S280.primal_0 = 1.0;
+
+// #line 213
+    _S280.differential_0 = 0.0;
+
+// #line 213
+    s_bwd_prop_clamp_0(_S278, _S279, _S280, _S277);
+
+// #line 213
+    float _S281 = _S278.differential_0 / _S274;
+
+// #line 213
+    float _S282 = _S272 * - _S281;
+
+// #line 213
+    float _S283 = _S273 * _S281;
+
+// #line 213
+    float _S284 = - _S282;
+
+// #line 213
+    float _S285 = - _S283;
+
+// #line 213
+    dpmaxval_3.primal_0 = dpmaxval_3.primal_0;
+
+// #line 213
+    dpmaxval_3.differential_0 = _S282;
+
+// #line 678 "core.meta.slang"
+    float _S286 = _S284 + _S285;
+
+// #line 678
+    dpminval_3.primal_0 = dpminval_3.primal_0;
+
+// #line 678
+    dpminval_3.differential_0 = _S286;
+
+// #line 678
+    dpx_10.primal_0 = dpx_10.primal_0;
+
+// #line 678
+    dpx_10.differential_0 = _S283;
+
+// #line 211 "D:/Programs/SlangU/Assets/Shaders/differentiable2dsplatter.slang"
+    return;
+}
+
+
+// #line 211
+void s_bwd_prop_loadFloat_0(uint _S287, uint _S288, float _S289)
+{
+
+// #line 211
+    loadFloat_bwd_0(_S287, _S288, _S289);
+
+// #line 211
+    return;
+}
+
+
+// #line 855
+void s_bwd_prop_clamp_1(inout DiffPair_vectorx3Cfloatx2C3x3E_0 _S290, inout DiffPair_vectorx3Cfloatx2C3x3E_0 _S291, inout DiffPair_vectorx3Cfloatx2C3x3E_0 _S292, float3 _S293)
+{
+
+// #line 855
+    _d_clamp_vector_1(_S290, _S291, _S292, _S293);
+
+// #line 855
+    return;
+}
+
+
+// #line 203
+void s_bwd_prop_smoothStep_1(inout DiffPair_vectorx3Cfloatx2C3x3E_0 dpx_11, inout DiffPair_vectorx3Cfloatx2C3x3E_0 dpminval_4, inout DiffPair_vectorx3Cfloatx2C3x3E_0 dpmaxval_4, float3 _s_dOut_7, s_bwd_prop_smoothStep_Intermediates_2 _s_diff_ctx_14)
+{
+    float3 _S294 = dpx_11.primal_0 - dpminval_4.primal_0;
+
+// #line 205
+    float3 _S295 = dpmaxval_4.primal_0 - dpminval_4.primal_0;
+
+// #line 205
+    float3 _S296 = _S295 * _S295;
+
+// #line 205
+    float3 _S297 = (float3)0.0;
+
+// #line 205
+    float3 _S298 = (float3)1.0;
+    float3 _S299 = _s_diff_ctx_14._S93;
+
+// #line 206
+    float3 _S300 = _s_diff_ctx_14._S93 * ((3.0 - 2.0 * _s_diff_ctx_14._S93) * _s_dOut_7);
+
+// #line 205
+    float3 _S301 = (float3)2.0 * - (_S299 * _S299 * _s_dOut_7) + _S300 + _S300;
+
+// #line 205
+    float3 _S302 = (float3)0.0;
+
+// #line 205
+    DiffPair_vectorx3Cfloatx2C3x3E_0 _S303;
+
+// #line 205
+    _S303.primal_0 = _S294 / _S295;
+
+// #line 205
+    _S303.differential_0 = _S302;
+
+// #line 205
+    DiffPair_vectorx3Cfloatx2C3x3E_0 _S304;
+
+// #line 205
+    _S304.primal_0 = _S297;
+
+// #line 205
+    _S304.differential_0 = _S302;
+
+// #line 205
+    DiffPair_vectorx3Cfloatx2C3x3E_0 _S305;
+
+// #line 205
+    _S305.primal_0 = _S298;
+
+// #line 205
+    _S305.differential_0 = _S302;
+
+// #line 205
+    s_bwd_prop_clamp_1(_S303, _S304, _S305, _S301);
+
+// #line 205
+    float3 _S306 = _S303.differential_0 / _S296;
+
+// #line 205
+    float3 _S307 = _S294 * - _S306;
+
+// #line 205
+    float3 _S308 = _S295 * _S306;
+
+// #line 205
+    float3 _S309 = - _S307;
+
+// #line 205
+    float3 _S310 = - _S308;
+
+// #line 205
+    dpmaxval_4.primal_0 = dpmaxval_4.primal_0;
+
+// #line 205
+    dpmaxval_4.differential_0 = _S307;
+
+// #line 205
+    float3 _S311 = _S309 + _S310;
+
+// #line 205
+    dpminval_4.primal_0 = dpminval_4.primal_0;
+
+// #line 205
+    dpminval_4.differential_0 = _S311;
+
+// #line 205
+    dpx_11.primal_0 = dpx_11.primal_0;
+
+// #line 205
+    dpx_11.differential_0 = _S308;
+
+// #line 203
+    return;
+}
+
+
+// #line 203
+void s_bwd_prop_sqrt_0(inout DiffPair_float_0 _S312, float _S313)
+{
+
+// #line 203
+    _d_sqrt_0(_S312, _S313);
+
+// #line 203
+    return;
+}
+
+
+// #line 203
+void s_bwd_prop_clamp_2(inout DiffPair_vectorx3Cfloatx2C2x3E_0 _S314, inout DiffPair_vectorx3Cfloatx2C2x3E_0 _S315, inout DiffPair_vectorx3Cfloatx2C2x3E_0 _S316, float2 _S317)
+{
+
+// #line 203
+    _d_clamp_vector_0(_S314, _S315, _S316, _S317);
+
+// #line 203
+    return;
+}
+
+
+// #line 203
+void s_bwd_prop_smoothStep_2(inout DiffPair_vectorx3Cfloatx2C2x3E_0 dpx_12, inout DiffPair_vectorx3Cfloatx2C2x3E_0 dpminval_5, inout DiffPair_vectorx3Cfloatx2C2x3E_0 dpmaxval_5, float2 _s_dOut_8, s_bwd_prop_smoothStep_Intermediates_0 _s_diff_ctx_15)
+{
+    float2 _S318 = dpx_12.primal_0 - dpminval_5.primal_0;
+
+// #line 205
+    float2 _S319 = dpmaxval_5.primal_0 - dpminval_5.primal_0;
+
+// #line 205
+    float2 _S320 = _S319 * _S319;
+
+// #line 205
+    float2 _S321 = (float2)0.0;
+
+// #line 205
+    float2 _S322 = (float2)1.0;
+    float2 _S323 = _s_diff_ctx_15._S91;
+
+// #line 206
+    float2 _S324 = _s_diff_ctx_15._S91 * ((3.0 - 2.0 * _s_diff_ctx_15._S91) * _s_dOut_8);
+
+// #line 205
+    float2 _S325 = (float2)2.0 * - (_S323 * _S323 * _s_dOut_8) + _S324 + _S324;
+
+// #line 205
+    float2 _S326 = (float2)0.0;
+
+// #line 205
+    DiffPair_vectorx3Cfloatx2C2x3E_0 _S327;
+
+// #line 205
+    _S327.primal_0 = _S318 / _S319;
+
+// #line 205
+    _S327.differential_0 = _S326;
+
+// #line 205
+    DiffPair_vectorx3Cfloatx2C2x3E_0 _S328;
+
+// #line 205
+    _S328.primal_0 = _S321;
+
+// #line 205
+    _S328.differential_0 = _S326;
+
+// #line 205
+    DiffPair_vectorx3Cfloatx2C2x3E_0 _S329;
+
+// #line 205
+    _S329.primal_0 = _S322;
+
+// #line 205
+    _S329.differential_0 = _S326;
+
+// #line 205
+    s_bwd_prop_clamp_2(_S327, _S328, _S329, _S325);
+
+// #line 205
+    float2 _S330 = _S327.differential_0 / _S320;
+
+// #line 205
+    float2 _S331 = _S318 * - _S330;
+
+// #line 205
+    float2 _S332 = _S319 * _S330;
+
+// #line 205
+    float2 _S333 = - _S331;
+
+// #line 205
+    float2 _S334 = - _S332;
+
+// #line 205
+    dpmaxval_5.primal_0 = dpmaxval_5.primal_0;
+
+// #line 205
+    dpmaxval_5.differential_0 = _S331;
+
+// #line 205
+    float2 _S335 = _S333 + _S334;
+
+// #line 205
+    dpminval_5.primal_0 = dpminval_5.primal_0;
+
+// #line 205
+    dpminval_5.differential_0 = _S335;
+
+// #line 205
+    dpx_12.primal_0 = dpx_12.primal_0;
+
+// #line 205
+    dpx_12.differential_0 = _S332;
+
+// #line 203
+    return;
+}
+
+
+// #line 416
+void s_bwd_prop_Gaussian2D_load_0(uint idx_5, uint localIdx_7, Gaussian2D_0 _s_dOut_9, s_bwd_prop_Gaussian2D_load_Intermediates_0 _s_diff_ctx_16)
+{
+
+// #line 424
+    uint _S336 = _s_diff_ctx_16.total_1 + idx_5;
+
+// #line 422
+    float2 _S337 = float2(_s_diff_ctx_16._S100, _s_diff_ctx_16._S101);
+
+
+    float2 _S338 = float2(0.0, 0.0);
+    float2 _S339 = float2(1.0, 1.0);
+
+
+
+    uint _S340 = _s_diff_ctx_16.total_1 * 2U + idx_5;
+
+// #line 430
+    float _S341 = _s_diff_ctx_16._S103 * 0.80000001192092896;
+
+// #line 430
+    float _S342 = _s_diff_ctx_16._S104 + 0.00499999988824129;
+
+    uint _S343 = _s_diff_ctx_16.total_1 * 3U + idx_5;
+
+// #line 432
+    float _S344 = _s_diff_ctx_16._S105 * 0.80000001192092896;
+
+// #line 432
+    float _S345 = _s_diff_ctx_16._S106 + 0.00499999988824129;
+
+
+    uint _S346 = _s_diff_ctx_16.total_1 * 4U + idx_5;
+
+// #line 435
+    float _S347 = _s_diff_ctx_16._S107 * 0.60000002384185791;
+
+// #line 435
+    float aniso_2 = (_s_diff_ctx_16._S108 - 0.5) * 1.64999997615814209;
+
+    float _S348 = _S342 * _S345;
+
+// #line 443
+    uint _S349 = _s_diff_ctx_16.total_1 * 5U + idx_5;
+    uint _S350 = _s_diff_ctx_16.total_1 * 6U + idx_5;
+    uint _S351 = _s_diff_ctx_16.total_1 * 7U + idx_5;
+
+// #line 442
+    float3 _S352 = float3(_s_diff_ctx_16._S110 * 0.80000001192092896, _s_diff_ctx_16._S111 * 0.80000001192092896, _s_diff_ctx_16._S112 * 0.80000001192092896);
+
+
+
+    float3 _S353 = float3(0.0, 0.0, 0.0);
+    float3 _S354 = float3(1.0, 1.0, 1.0);
+
+
+    uint _S355 = _s_diff_ctx_16.total_1 * 8U + idx_5;
+
+// #line 450
+    float _S356 = _s_diff_ctx_16._S113 * 0.89999997615814209 + 0.10000000149011612;
+
+
+    float2x2 _S357 = float2x2(0.0, 0.0, 0.0, 0.0);
+
+// #line 453
+    Gaussian2D_0 _S358 = _s_dOut_9;
+
+// #line 453
+    _S358.sigma_0 = _S357;
+
+// #line 453
+    float2x2 _S359 = float2x2(0.00009999999747379, 0.00009999999747379, 0.00009999999747379, 0.00009999999747379) * _s_dOut_9.sigma_0;
+
+// #line 453
+    _S358.opacity_0 = 0.0;
+
+// #line 449
+    DiffPair_float_0 _S360;
+
+// #line 449
+    _S360.primal_0 = _S356;
+
+// #line 449
+    _S360.differential_0 = 0.0;
+
+// #line 449
+    DiffPair_float_0 _S361;
+
+// #line 449
+    _S361.primal_0 = 0.0;
+
+// #line 449
+    _S361.differential_0 = 0.0;
+
+// #line 449
+    DiffPair_float_0 _S362;
+
+// #line 449
+    _S362.primal_0 = 1.0;
+
+// #line 449
+    _S362.differential_0 = 0.0;
+
+// #line 449
+    s_bwd_prop_smoothStep_0(_S360, _S361, _S362, _s_dOut_9.opacity_0, _s_diff_ctx_16._S99);
+
+// #line 449
+    s_bwd_prop_loadFloat_0(_S355, localIdx_7, 0.89999997615814209 * _S360.differential_0);
+
+// #line 441
+    float3 _S363 = (float3)0.0;
+
+// #line 441
+    _S358.color_0 = _S363;
+
+// #line 441
+    DiffPair_vectorx3Cfloatx2C3x3E_0 _S364;
+
+// #line 441
+    _S364.primal_0 = _S352;
+
+// #line 441
+    _S364.differential_0 = _S363;
+
+// #line 441
+    DiffPair_vectorx3Cfloatx2C3x3E_0 _S365;
+
+// #line 441
+    _S365.primal_0 = _S353;
+
+// #line 441
+    _S365.differential_0 = _S363;
+
+// #line 441
+    DiffPair_vectorx3Cfloatx2C3x3E_0 _S366;
+
+// #line 441
+    _S366.primal_0 = _S354;
+
+// #line 441
+    _S366.differential_0 = _S363;
+
+// #line 441
+    s_bwd_prop_smoothStep_1(_S364, _S365, _S366, _s_dOut_9.color_0, _s_diff_ctx_16._S98);
+
+// #line 441
+    s_bwd_prop_loadFloat_0(_S351, localIdx_7, 0.80000001192092896 * _S364.differential_0[int(2)]);
+
+// #line 441
+    s_bwd_prop_loadFloat_0(_S350, localIdx_7, 0.80000001192092896 * _S364.differential_0[int(1)]);
+
+// #line 441
+    s_bwd_prop_loadFloat_0(_S349, localIdx_7, 0.80000001192092896 * _S364.differential_0[int(0)]);
+
+// #line 438
+    Gaussian2D_0 _S367 = Gaussian2D_x24_syn_dzero_0();
+
+// #line 438
+    _S367.sigma_0 = _S359;
+
+// #line 438
+    Gaussian2D_0 _S368 = Gaussian2D_x24_syn_dadd_0(_S358, _S367);
+
+// #line 438
+    _S358 = _S368;
+
+// #line 438
+    _S358.sigma_0[int(1)][int(0)] = 0.0;
+
+// #line 438
+    _S358.sigma_0[int(0)][int(1)] = 0.0;
+
+// #line 437
+    float _S369 = _S368.sigma_0[int(1)][int(0)] + _S368.sigma_0[int(0)][int(1)];
+
+// #line 437
+    float s_diff_aniso_T_0 = _s_diff_ctx_16._S109 * _S369;
+
+// #line 437
+    float _S370 = aniso_2 * _S369;
+
+// #line 437
+    DiffPair_float_0 _S371;
+
+// #line 437
+    _S371.primal_0 = _S348;
+
+// #line 437
+    _S371.differential_0 = 0.0;
+
+// #line 437
+    s_bwd_prop_sqrt_0(_S371, _S370);
+
+// #line 437
+    float _S372 = _S342 * _S371.differential_0;
+
+// #line 437
+    float _S373 = _S345 * _S371.differential_0;
+
+// #line 435
+    float _S374 = 1.64999997615814209 * s_diff_aniso_T_0;
+
+// #line 434
+    DiffPair_float_0 _S375;
+
+// #line 434
+    _S375.primal_0 = _S347;
+
+// #line 434
+    _S375.differential_0 = 0.0;
+
+// #line 434
+    DiffPair_float_0 _S376;
+
+// #line 434
+    _S376.primal_0 = 0.0;
+
+// #line 434
+    _S376.differential_0 = 0.0;
+
+// #line 434
+    DiffPair_float_0 _S377;
+
+// #line 434
+    _S377.primal_0 = 1.0;
+
+// #line 434
+    _S377.differential_0 = 0.0;
+
+// #line 434
+    s_bwd_prop_smoothStep_0(_S375, _S376, _S377, _S374, _s_diff_ctx_16._S97);
+
+// #line 434
+    s_bwd_prop_loadFloat_0(_S346, localIdx_7, 0.60000002384185791 * _S375.differential_0);
+
+// #line 434
+    _S358.sigma_0[int(1)][int(1)] = 0.0;
+
+// #line 432
+    float _S378 = _S372 + _S368.sigma_0[int(1)][int(1)];
+
+// #line 431
+    DiffPair_float_0 _S379;
+
+// #line 431
+    _S379.primal_0 = _S344;
+
+// #line 431
+    _S379.differential_0 = 0.0;
+
+// #line 431
+    DiffPair_float_0 _S380;
+
+// #line 431
+    _S380.primal_0 = 0.0;
+
+// #line 431
+    _S380.differential_0 = 0.0;
+
+// #line 431
+    DiffPair_float_0 _S381;
+
+// #line 431
+    _S381.primal_0 = 1.0;
+
+// #line 431
+    _S381.differential_0 = 0.0;
+
+// #line 431
+    s_bwd_prop_smoothStep_0(_S379, _S380, _S381, _S378, _s_diff_ctx_16._S96);
+
+// #line 431
+    s_bwd_prop_loadFloat_0(_S343, localIdx_7, 0.80000001192092896 * _S379.differential_0);
+
+// #line 431
+    _S358.sigma_0[int(0)][int(0)] = 0.0;
+
+// #line 430
+    float _S382 = _S373 + _S368.sigma_0[int(0)][int(0)];
+
+// #line 429
+    DiffPair_float_0 _S383;
+
+// #line 429
+    _S383.primal_0 = _S341;
+
+// #line 429
+    _S383.differential_0 = 0.0;
+
+// #line 429
+    DiffPair_float_0 _S384;
+
+// #line 429
+    _S384.primal_0 = 0.0;
+
+// #line 429
+    _S384.differential_0 = 0.0;
+
+// #line 429
+    DiffPair_float_0 _S385;
+
+// #line 429
+    _S385.primal_0 = 1.0;
+
+// #line 429
+    _S385.differential_0 = 0.0;
+
+// #line 429
+    s_bwd_prop_smoothStep_0(_S383, _S384, _S385, _S382, _s_diff_ctx_16._S95);
+
+// #line 429
+    s_bwd_prop_loadFloat_0(_S340, localIdx_7, 0.80000001192092896 * _S383.differential_0);
+
+// #line 421
+    float2 _S386 = (float2)0.0;
+
+// #line 421
+    DiffPair_vectorx3Cfloatx2C2x3E_0 _S387;
+
+// #line 421
+    _S387.primal_0 = _S337;
+
+// #line 421
+    _S387.differential_0 = _S386;
+
+// #line 421
+    DiffPair_vectorx3Cfloatx2C2x3E_0 _S388;
+
+// #line 421
+    _S388.primal_0 = _S338;
+
+// #line 421
+    _S388.differential_0 = _S386;
+
+// #line 421
+    DiffPair_vectorx3Cfloatx2C2x3E_0 _S389;
+
+// #line 421
+    _S389.primal_0 = _S339;
+
+// #line 421
+    _S389.differential_0 = _S386;
+
+// #line 421
+    s_bwd_prop_smoothStep_2(_S387, _S388, _S389, _S358.center_2, _s_diff_ctx_16._S94);
+
+// #line 421
+    s_bwd_prop_loadFloat_0(_S336, localIdx_7, _S387.differential_0[int(1)]);
+
+// #line 421
+    s_bwd_prop_loadFloat_0(idx_5, localIdx_7, _S387.differential_0[int(0)]);
+
+// #line 416
+    return;
+}
+
+
+// #line 624
+void s_bwd_prop_eval_0(uint blob_id_2, float2 uv_3, uint localIdx_8, float4 _s_dOut_10, s_bwd_prop_eval_Intermediates_0 _s_diff_ctx_17)
+{
+
+    Gaussian2D_0 _S390 = Gaussian2D_x24_syn_dzero_0();
+
+// #line 627
+    DiffPair_Gaussian2D_0 _S391;
+
+// #line 627
+    _S391.primal_0 = _s_diff_ctx_17._S120;
+
+// #line 627
+    _S391.differential_0 = _S390;
+
+// #line 627
+    float2 _S392 = (float2)0.0;
+
+// #line 627
+    DiffPair_vectorx3Cfloatx2C2x3E_0 _S393;
+
+// #line 627
+    _S393.primal_0 = uv_3;
+
+// #line 627
+    _S393.differential_0 = _S392;
+
+// #line 627
+    s_bwd_prop_Gaussian2D_eval_0(_S391, _S393, _s_dOut_10, _s_diff_ctx_17._S119);
+
+// #line 626
+    s_bwd_prop_Gaussian2D_load_0(blob_id_2, localIdx_8, _S391.differential_0, _s_diff_ctx_17._S118);
+
+// #line 624
+    return;
+}
+
+
+// #line 624
+void s_bwd_eval_0(uint _S394, float2 _S395, uint _S396, float4 _S397)
+{
+
+// #line 624
+    s_bwd_prop_eval_Intermediates_0 _S398;
+
+// #line 624
+    float4 _S399 = s_primal_ctx_eval_0(_S394, _S395, _S396, _S398);
+
+// #line 624
+    s_bwd_prop_eval_0(_S394, _S395, _S396, _S397, _S398);
+
+// #line 624
+    return;
+}
+
+
+// #line 670
+void fineRasterize_bwd_0(SortedShortList_0 SLANG_anonymous_3_0, uint localIdx_9, float2 uv_4, float4 dOut_8)
+{
+    GroupMemoryBarrierWithGroupSync();
+
+    uint _S400 = maxCount_0[localIdx_9];
+
+// #line 682
+    uint count_0 = blobCount_0;
+
+// #line 682
+    PixelState_0 pixelState_0;
+
+// #line 682
+    pixelState_0.value_1 = finalVal_0[localIdx_9];
+
+// #line 682
+    pixelState_0.finalCount_0 = _S400;
+
+// #line 682
+    PixelState_Differential_0 dColor_0;
+
+// #line 682
+    dColor_0.value_0 = dOut_8;
+
+// #line 682
+    uint _i_0 = count_0;
+
+// #line 688
+    for(;;)
+    {
+
+// #line 688
+        if(_i_0 > 0U)
+        {
+        }
+        else
+        {
+
+// #line 688
+            break;
+        }
+        uint i_5 = _i_0 - 1U;
+        uint blobID_0 = blobs_0[i_5];
+        float4 gval_4 = eval_0(blobs_0[i_5], uv_4, localIdx_9);
+        PixelState_0 prevState_0 = undoPixelState_0(pixelState_0, i_5 + 1U, gval_4);
+
+        PixelState_Differential_0 _S401 = PixelState_x24_syn_dzero_0();
+
+// #line 695
+        DiffPair_PixelState_0 dpState_0;
+
+// #line 695
+        dpState_0.primal_0 = prevState_0;
+
+// #line 695
+        dpState_0.differential_0 = _S401;
+        float4 _S402 = (float4)0.0;
+
+// #line 696
+        DiffPair_vectorx3Cfloatx2C4x3E_0 dpGVal_0;
+
+// #line 696
+        dpGVal_0.primal_0 = gval_4;
+
+// #line 696
+        dpGVal_0.differential_0 = _S402;
+
+// #line 702
+        s_bwd_transformPixelState_0(dpState_0, dpGVal_0, dColor_0);
+        s_bwd_eval_0(blobID_0, uv_4, localIdx_9, dpGVal_0.differential_0);
+
+
+        DiffPair_PixelState_0 _S403 = dpState_0;
+
+// #line 688
+        uint _S404 = _i_0 - 1U;
+
+// #line 688
+        pixelState_0 = prevState_0;
+
+// #line 688
+        dColor_0 = _S403.differential_0;
+
+// #line 688
+        _i_0 = _S404;
+
+// #line 688
+    }
+
+// #line 708
+    return;
+}
+
+
+// #line 641
+float4 fineRasterize_0(SortedShortList_0 SLANG_anonymous_2_0, uint localIdx_10, float2 uv_5)
+{
+    GroupMemoryBarrierWithGroupSync();
+
+
+    uint _S405 = blobCount_0;
+
+// #line 646
+    PixelState_0 pixelState_1;
+
+// #line 646
+    pixelState_1.value_1 = float4(0.0, 0.0, 0.0, 1.0);
+
+// #line 646
+    pixelState_1.finalCount_0 = 0U;
+
+// #line 646
+    uint i_6 = 0U;
+
+    for(;;)
+    {
+
+// #line 648
+        if(i_6 < _S405)
+        {
+        }
+        else
+        {
+
+// #line 648
+            break;
+        }
+
+// #line 649
+        PixelState_0 _S406 = transformPixelState_0(pixelState_1, eval_0(blobs_0[i_6], uv_5, localIdx_10));
+
+// #line 648
+        uint _S407 = i_6 + 1U;
+
+// #line 648
+        pixelState_1 = _S406;
+
+// #line 648
+        i_6 = _S407;
+
+// #line 648
+    }
+
+
+    maxCount_0[localIdx_10] = pixelState_1.finalCount_0;
+    finalVal_0[localIdx_10] = pixelState_1.value_1;
+    return pixelState_1.value_1;
+}
+
+
+// #line 781
+struct s_bwd_prop_splatBlobs_Intermediates_0
+{
+    float2 uv_6;
+    SortedShortList_0 sortedList_0;
+    float4 _S408;
+};
+
+
+// #line 840
+struct s_bwd_prop_loss_Intermediates_0
+{
+    s_bwd_prop_splatBlobs_Intermediates_0 _S409;
+    float4 _S410;
+    float4 _S411;
+};
+
+
+// #line 840
+float4 s_primal_ctx_fineRasterize_0(SortedShortList_0 _S412, uint _S413, float2 _S414)
+{
+
+// #line 840
+    float4 _S415 = fineRasterize_0(_S412, _S413, _S414);
+
+// #line 840
+    return _S415;
+}
+
+
+// #line 840
+float4 s_primal_ctx_splatBlobs_0(uint2 dispatchThreadID_2, int2 dispatchSize_0, out s_bwd_prop_splatBlobs_Intermediates_0 _s_diff_ctx_18)
+{
+
+// #line 781
+    SortedShortList_0 _S416 = { int(0) };
+
+// #line 781
+    float4 _S417 = (float4)0.0;
+
+// #line 781
+    _s_diff_ctx_18.uv_6 = (float2)0.0;
+
+// #line 781
+    _s_diff_ctx_18.sortedList_0 = _S416;
+
+// #line 781
+    _s_diff_ctx_18._S408 = _S417;
+
+// #line 787
+    int _S418 = int(0);
+
+// #line 787
+    int _S419 = int(0);
+
+// #line 787
+    targetTexture_0.GetDimensions(_S418, _S419);
+    int2 texSize_0 = int2(_S418, _S419);
+
+
+
+    float2 uv_7 = calcUV_0(dispatchThreadID_2, dispatchSize_0, texSize_0);
+
+// #line 792
+    _s_diff_ctx_18.uv_6 = uv_7;
+
+// #line 798
+    uint2 tileCoords_0 = uint2(uint(int(dispatchThreadID_2.x) / int(16)), uint(int(dispatchThreadID_2.y) / int(16)));
+
+    uint2 _S420 = uint2(16U, 16U);
+
+// #line 800
+    float2 tileLow_0 = calcUV_0(tileCoords_0 * _S420, dispatchSize_0, texSize_0);
+    float2 tileHigh_0 = calcUV_0((tileCoords_0 + 1U) * _S420, dispatchSize_0, texSize_0);
+
+// #line 807
+    OBB_0 tileBounds_1 = OBB_x24init_0((tileLow_0 + tileHigh_0) / 2.0, float2x2(1.0, 0.0, 0.0, 1.0), (tileHigh_0 - tileLow_0) / 2.0);
+
+// #line 814
+    InitializedShortList_0 sList_1 = initShortList_0(dispatchThreadID_2);
+
+    uint2 localID_0 = dispatchThreadID_2 % _S420;
+    uint localIdx_11 = uint(int(localID_0.x) + int(localID_0.y) * int(16));
+
+
+    FilledShortList_0 filledSList_0 = coarseRasterize_0(sList_1, tileBounds_1, localIdx_11);
+
+
+    PaddedShortList_0 paddedSList_0 = padBuffer_0(filledSList_0, localIdx_11);
+
+
+    SortedShortList_0 sortedList_1 = bitonicSort_0(paddedSList_0, localIdx_11);
+
+// #line 826
+    _s_diff_ctx_18.sortedList_0 = sortedList_1;
+
+// #line 826
+    float4 _S421 = s_primal_ctx_fineRasterize_0(sortedList_1, localIdx_11, uv_7);
+
+// #line 826
+    _s_diff_ctx_18._S408 = _S421;
+
+// #line 832
+    float _S422 = _S421.w;
+
+// #line 832
+    return float4(_S421.xyz * (1.0 - _S422) + _S422, 1.0);
+}
+
+
+// #line 832
+float s_primal_ctx_dot_0(float3 _S423, float3 _S424)
+{
+
+// #line 832
+    return dot(_S423, _S424);
+}
+
+
+// #line 832
+float s_primal_ctx_loss_0(uint2 dispatchThreadID_3, int2 imageSize_1, out s_bwd_prop_loss_Intermediates_0 _s_diff_ctx_19)
+{
+
+// #line 840
+    SortedShortList_0 _S425 = { int(0) };
+
+// #line 840
+    float4 _S426 = (float4)0.0;
+
+// #line 840
+    s_bwd_prop_splatBlobs_Intermediates_0 _S427 = { (float2)0.0, _S425, _S426 };
+
+// #line 840
+    _s_diff_ctx_19._S409 = _S427;
+
+// #line 840
+    _s_diff_ctx_19._S410 = _S426;
+
+// #line 840
+    _s_diff_ctx_19._S411 = _S426;
+
+// #line 854
+    _s_diff_ctx_19._S410 = _S426;
+
+// #line 843
+    float4 _S428 = s_primal_ctx_splatBlobs_0(dispatchThreadID_3, imageSize_1, _s_diff_ctx_19._S409);
+
+// #line 843
+    _s_diff_ctx_19._S411 = _S428;
+
+
+
+    uint _S429 = dispatchThreadID_3.x;
+
+// #line 847
+    bool _S430;
+
+// #line 847
+    if(int(_S429) >= imageSize_1.x)
+    {
+
+// #line 847
+        _S430 = true;
+
+// #line 847
+    }
+    else
+    {
+
+// #line 847
+        _S430 = int(dispatchThreadID_3.y) >= imageSize_1.y;
+
+// #line 847
+    }
+
+// #line 847
+    float _S431;
+
+// #line 847
+    if(_S430)
+    {
+
+// #line 847
+        _S431 = 0.0;
+
+// #line 847
+    }
+    else
+    {
+
+// #line 854
+        float4 targetColor_0 = targetTexture_0[uint2(_S429, uint(imageSize_1.y - int(dispatchThreadID_3.y)))];
+
+// #line 854
+        _s_diff_ctx_19._S410 = targetColor_0;
+        float3 _S432 = _S428.xyz - targetColor_0.xyz;
+
+// #line 855
+        _S431 = s_primal_ctx_dot_0(_S432, _S432);
+
+// #line 855
+    }
+
+// #line 855
+    return _S431;
+}
+
+
+// #line 855
+void s_bwd_prop_dot_0(inout DiffPair_vectorx3Cfloatx2C3x3E_0 _S433, inout DiffPair_vectorx3Cfloatx2C3x3E_0 _S434, float _S435)
+{
+
+// #line 855
+    _d_dot_0(_S433, _S434, _S435);
+
+// #line 855
+    return;
+}
+
+
+// #line 855
+void s_bwd_prop_fineRasterize_0(SortedShortList_0 _S436, uint _S437, float2 _S438, float4 _S439)
+{
+
+// #line 855
+    fineRasterize_bwd_0(_S436, _S437, _S438, _S439);
+
+// #line 855
+    return;
+}
+
+
+// #line 781
+void s_bwd_prop_splatBlobs_0(uint2 dispatchThreadID_4, int2 dispatchSize_1, float4 _s_dOut_11, s_bwd_prop_splatBlobs_Intermediates_0 _s_diff_ctx_20)
+{
+
+// #line 787
+    int _S440 = int(0);
+
+// #line 787
+    int _S441 = int(0);
+
+// #line 787
+    targetTexture_0.GetDimensions(_S440, _S441);
+    int2 texSize_1 = int2(_S440, _S441);
+
+// #line 798
+    uint2 tileCoords_1 = uint2(uint(int(dispatchThreadID_4.x) / int(16)), uint(int(dispatchThreadID_4.y) / int(16)));
+
+    uint2 _S442 = uint2(16U, 16U);
+
+// #line 800
+    float2 tileLow_1 = calcUV_0(tileCoords_1 * _S442, dispatchSize_1, texSize_1);
+    float2 tileHigh_1 = calcUV_0((tileCoords_1 + 1U) * _S442, dispatchSize_1, texSize_1);
+
+// #line 807
+    OBB_0 tileBounds_2 = OBB_x24init_0((tileLow_1 + tileHigh_1) / 2.0, float2x2(1.0, 0.0, 0.0, 1.0), (tileHigh_1 - tileLow_1) / 2.0);
+
+// #line 814
+    InitializedShortList_0 sList_2 = initShortList_0(dispatchThreadID_4);
+
+    uint2 localID_1 = dispatchThreadID_4 % _S442;
+    uint localIdx_12 = uint(int(localID_1.x) + int(localID_1.y) * int(16));
+
+
+    FilledShortList_0 filledSList_1 = coarseRasterize_0(sList_2, tileBounds_2, localIdx_12);
+
+
+    PaddedShortList_0 paddedSList_1 = padBuffer_0(filledSList_1, localIdx_12);
+
+// #line 832
+    float3 _S443 = _s_dOut_11.xyz;
+
+// #line 832
+    float3 _S444 = _s_diff_ctx_20._S408.xyz * _S443;
+
+// #line 832
+    float3 _S445 = (float3)(1.0 - _s_diff_ctx_20._S408.w) * _S443;
+
+// #line 832
+    s_bwd_prop_fineRasterize_0(_s_diff_ctx_20.sortedList_0, localIdx_12, _s_diff_ctx_20.uv_6, float4(_S445[int(0)], _S445[int(1)], _S445[int(2)], - (_S444[int(0)] + _S444[int(1)] + _S444[int(2)]) + _S443[int(0)] + _S443[int(1)] + _S443[int(2)]));
+
+// #line 781
+    return;
+}
+
+
+// #line 840
+void s_bwd_prop_loss_0(uint2 dispatchThreadID_5, int2 imageSize_2, float _s_dOut_12, s_bwd_prop_loss_Intermediates_0 _s_diff_ctx_21)
+{
+
+// #line 855
+    float3 _S446 = (float3)0.0;
+
+// #line 855
+    bool _S447;
+
+// #line 847
+    if(int(dispatchThreadID_5.x) >= imageSize_2.x)
+    {
+
+// #line 847
+        _S447 = true;
+
+// #line 847
+    }
+    else
+    {
+
+// #line 847
+        _S447 = int(dispatchThreadID_5.y) >= imageSize_2.y;
+
+// #line 847
+    }
+
+// #line 847
+    float3 _S448;
+
+// #line 847
+    if(_S447)
+    {
+
+// #line 847
+        _S448 = _S446;
+
+// #line 847
+    }
+    else
+    {
+
+// #line 847
+        _S448 = _s_diff_ctx_21._S411.xyz - _s_diff_ctx_21._S410.xyz;
+
+// #line 847
+    }
+
+// #line 843
+    float4 _S449 = (float4)0.0;
+
+// #line 843
+    float4 _S450;
+
+// #line 843
+    if(_S447)
+    {
+
+// #line 843
+        _S450 = _S449;
+
+// #line 843
+    }
+    else
+    {
+
+// #line 855
+        DiffPair_vectorx3Cfloatx2C3x3E_0 _S451;
+
+// #line 855
+        _S451.primal_0 = _S448;
+
+// #line 855
+        _S451.differential_0 = _S446;
+
+// #line 855
+        DiffPair_vectorx3Cfloatx2C3x3E_0 _S452;
+
+// #line 855
+        _S452.primal_0 = _S448;
+
+// #line 855
+        _S452.differential_0 = _S446;
+
+// #line 855
+        s_bwd_prop_dot_0(_S451, _S452, _s_dOut_12);
+
+// #line 855
+        float3 _S453 = _S452.differential_0 + _S451.differential_0;
+
+// #line 855
+        _S450 = float4(_S453[int(0)], _S453[int(1)], _S453[int(2)], 0.0);
+
+// #line 855
+    }
+
+// #line 843
+    s_bwd_prop_splatBlobs_0(dispatchThreadID_5, imageSize_2, _S450, _s_diff_ctx_21._S409);
+
+// #line 840
+    return;
+}
+
+
+// #line 840
+void s_bwd_loss_0(uint2 _S454, int2 _S455, float _S456)
+{
+
+// #line 840
+    s_bwd_prop_loss_Intermediates_0 _S457;
+
+// #line 840
+    float _S458 = s_primal_ctx_loss_0(_S454, _S455, _S457);
+
+// #line 840
+    s_bwd_prop_loss_0(_S454, _S455, _S456, _S457);
+
+// #line 840
+    return;
+}
+
+
+// #line 882
+[shader("compute")][numthreads(16, 16, 1)]
+void computeDerivativesMain(uint2 dispatchThreadID_6 : SV_DispatchThreadID)
+{
+
+// #line 884
+    uint dimX_0;
+    uint dimY_0;
+    targetTexture_0.GetDimensions(dimX_0, dimY_0);
+
+    int _S459 = int(dimX_0);
+
+// #line 888
+    int _S460 = int(dimY_0);
+
+// #line 894
+    s_bwd_loss_0(dispatchThreadID_6, int2(_S459, _S460), 1.0 / float(_S459 * _S460));
+    return;
+}
+
