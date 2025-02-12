@@ -29,8 +29,11 @@ public class OceanImage : MonoBehaviour
         var kernelHandle = computeShader.FindKernel(kernelName);
         computeShader.SetTexture(kernelHandle, "result_0", renderTexture);
 
-        int threadGroupsX = textureSize / 8;
-        int threadGroupsY = textureSize / 8;
+        uint x, y, z;
+        computeShader.GetKernelThreadGroupSizes(kernelHandle, out x, out y, out z);
+
+        int threadGroupsX = (int)Mathf.Ceil(textureSize / (float)x);
+        int threadGroupsY = (int)Mathf.Ceil(textureSize / (float)y);
         computeShader.Dispatch(kernelHandle, threadGroupsX, threadGroupsY, 1);
 
         Renderer renderer = GetComponent<Renderer>();
