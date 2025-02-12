@@ -3,7 +3,7 @@ using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Rendering;
 
-public class ComputeImage : MonoBehaviour
+public class OceanImage : MonoBehaviour
 {
     public ComputeShader computeShader;
     public int textureSize = 256;
@@ -24,6 +24,7 @@ public class ComputeImage : MonoBehaviour
 
         computeShader.SetVector("U_ScreenSize_0", new Vector4(renderTexture.width, renderTexture.height, 1.0f / (float)renderTexture.width, 1.0f / (float)renderTexture.height));
         computeShader.SetVector("_Time_0", new Vector4(Time.time / 20.0f, Time.time, Time.time * 2, Time.time * 3));
+        computeShader.SetVector("_MousePosition_0", Vector4.zero); // TODO
 
         var kernelHandle = computeShader.FindKernel(kernelName);
         computeShader.SetTexture(kernelHandle, "result_0", renderTexture);
