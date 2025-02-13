@@ -850,8 +850,10 @@ float loss(uint2 dispatchThreadID, int2 imageSize)
     }
     else
     {
-        uint2 flippedCoords = uint2(dispatchThreadID.x, imageSize.y - dispatchThreadID.y);
-        targetColor = no_diff targetTexture[flippedCoords];
+        //uint2 flippedCoords = uint2(dispatchThreadID.x, imageSize.y - dispatchThreadID.y);
+        //targetColor = no_diff targetTexture[flippedCoords];
+        targetColor = no_diff targetTexture[dispatchThreadID.xy];
+        targetColor = pow(targetColor, 1.0 / 2.2);
         return dot(color.rgb - targetColor.rgb, color.rgb - targetColor.rgb);
     }
 
@@ -956,7 +958,7 @@ RWTexture2D<float4> result;
 uniform float4 _ScreenSize;
 
 [shader("compute")]
-[numthreads(32, 32, 1)]
+[numthreads(16, 16, 1)]
 void imageMain(uint3 threadId: SV_DispatchThreadID)
 {
     result[threadId.xy] = splatBlobs(threadId.xy, (int2)_ScreenSize.xy);

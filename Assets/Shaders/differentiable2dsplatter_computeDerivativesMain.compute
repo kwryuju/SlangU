@@ -163,50 +163,50 @@ struct Gaussian2D_0
 };
 
 
-// #line 891
+// #line 893
 Gaussian2D_0 Gaussian2D_x24_syn_dzero_0()
 {
 
-// #line 891
+// #line 893
     Gaussian2D_0 result_0;
 
-// #line 891
+// #line 893
     result_0.center_2 = (float2)0.0;
 
-// #line 891
+// #line 893
     result_0.sigma_0 = float2x2(0.0, 0.0, 0.0, 0.0);
 
-// #line 891
+// #line 893
     result_0.color_0 = (float3)0.0;
 
-// #line 891
+// #line 893
     result_0.opacity_0 = 0.0;
 
-// #line 891
+// #line 893
     return result_0;
 }
 
 
-// #line 891
+// #line 893
 Gaussian2D_0 Gaussian2D_x24_syn_dadd_0(Gaussian2D_0 SLANG_anonymous_0_0, Gaussian2D_0 SLANG_anonymous_1_0)
 {
 
-// #line 891
+// #line 893
     Gaussian2D_0 result_1;
 
-// #line 891
+// #line 893
     result_1.center_2 = SLANG_anonymous_0_0.center_2 + SLANG_anonymous_1_0.center_2;
 
-// #line 891
+// #line 893
     result_1.sigma_0 = SLANG_anonymous_0_0.sigma_0 + SLANG_anonymous_1_0.sigma_0;
 
-// #line 891
+// #line 893
     result_1.color_0 = SLANG_anonymous_0_0.color_0 + SLANG_anonymous_1_0.color_0;
 
-// #line 891
+// #line 893
     result_1.opacity_0 = SLANG_anonymous_0_0.opacity_0 + SLANG_anonymous_1_0.opacity_0;
 
-// #line 891
+// #line 893
     return result_1;
 }
 
@@ -1430,37 +1430,37 @@ struct PixelState_Differential_0
 };
 
 
-// #line 843
+// #line 1 "token paste"
 PixelState_Differential_0 PixelState_x24_syn_dzero_0()
 {
 
-// #line 843
+// #line 1
     PixelState_Differential_0 result_2;
 
-// #line 843
+// #line 1
     result_2.value_0 = (float4)0.0;
 
-// #line 843
+// #line 1
     return result_2;
 }
 
 
-// #line 843
+// #line 1
 PixelState_Differential_0 PixelState_x24_syn_dadd_0(PixelState_Differential_0 SLANG_anonymous_0_2, PixelState_Differential_0 SLANG_anonymous_1_2)
 {
 
-// #line 843
+// #line 1
     PixelState_Differential_0 result_3;
 
-// #line 843
+// #line 1
     result_3.value_0 = SLANG_anonymous_0_2.value_0 + SLANG_anonymous_1_2.value_0;
 
-// #line 843
+// #line 1
     return result_3;
 }
 
 
-// #line 93
+// #line 93 "D:/Programs/SlangU/Assets/Shaders/differentiable2dsplatter.slang"
 static groupshared float4  finalVal_0[int(256)];
 
 
@@ -3020,14 +3020,14 @@ void s_bwd_prop_loadFloat_0(uint _S287, uint _S288, float _S289)
 }
 
 
-// #line 855
+// #line 857
 void s_bwd_prop_clamp_1(inout DiffPair_vectorx3Cfloatx2C3x3E_0 _S290, inout DiffPair_vectorx3Cfloatx2C3x3E_0 _S291, inout DiffPair_vectorx3Cfloatx2C3x3E_0 _S292, float3 _S293)
 {
 
-// #line 855
+// #line 857
     _d_clamp_vector_1(_S290, _S291, _S292, _S293);
 
-// #line 855
+// #line 857
     return;
 }
 
@@ -3832,18 +3832,19 @@ struct s_bwd_prop_loss_Intermediates_0
     s_bwd_prop_splatBlobs_Intermediates_0 _S409;
     float4 _S410;
     float4 _S411;
+    float4 _S412;
 };
 
 
 // #line 840
-float4 s_primal_ctx_fineRasterize_0(SortedShortList_0 _S412, uint _S413, float2 _S414)
+float4 s_primal_ctx_fineRasterize_0(SortedShortList_0 _S413, uint _S414, float2 _S415)
 {
 
 // #line 840
-    float4 _S415 = fineRasterize_0(_S412, _S413, _S414);
+    float4 _S416 = fineRasterize_0(_S413, _S414, _S415);
 
 // #line 840
-    return _S415;
+    return _S416;
 }
 
 
@@ -3852,29 +3853,29 @@ float4 s_primal_ctx_splatBlobs_0(uint2 dispatchThreadID_2, int2 dispatchSize_0, 
 {
 
 // #line 781
-    SortedShortList_0 _S416 = { int(0) };
+    SortedShortList_0 _S417 = { int(0) };
 
 // #line 781
-    float4 _S417 = (float4)0.0;
+    float4 _S418 = (float4)0.0;
 
 // #line 781
     _s_diff_ctx_18.uv_6 = (float2)0.0;
 
 // #line 781
-    _s_diff_ctx_18.sortedList_0 = _S416;
+    _s_diff_ctx_18.sortedList_0 = _S417;
 
 // #line 781
-    _s_diff_ctx_18._S408 = _S417;
-
-// #line 787
-    int _S418 = int(0);
+    _s_diff_ctx_18._S408 = _S418;
 
 // #line 787
     int _S419 = int(0);
 
 // #line 787
-    targetTexture_0.GetDimensions(_S418, _S419);
-    int2 texSize_0 = int2(_S418, _S419);
+    int _S420 = int(0);
+
+// #line 787
+    targetTexture_0.GetDimensions(_S419, _S420);
+    int2 texSize_0 = int2(_S419, _S420);
 
 
 
@@ -3886,11 +3887,11 @@ float4 s_primal_ctx_splatBlobs_0(uint2 dispatchThreadID_2, int2 dispatchSize_0, 
 // #line 798
     uint2 tileCoords_0 = uint2(uint(int(dispatchThreadID_2.x) / int(16)), uint(int(dispatchThreadID_2.y) / int(16)));
 
-    uint2 _S420 = uint2(16U, 16U);
+    uint2 _S421 = uint2(16U, 16U);
 
 // #line 800
-    float2 tileLow_0 = calcUV_0(tileCoords_0 * _S420, dispatchSize_0, texSize_0);
-    float2 tileHigh_0 = calcUV_0((tileCoords_0 + 1U) * _S420, dispatchSize_0, texSize_0);
+    float2 tileLow_0 = calcUV_0(tileCoords_0 * _S421, dispatchSize_0, texSize_0);
+    float2 tileHigh_0 = calcUV_0((tileCoords_0 + 1U) * _S421, dispatchSize_0, texSize_0);
 
 // #line 807
     OBB_0 tileBounds_1 = OBB_x24init_0((tileLow_0 + tileHigh_0) / 2.0, float2x2(1.0, 0.0, 0.0, 1.0), (tileHigh_0 - tileLow_0) / 2.0);
@@ -3898,7 +3899,7 @@ float4 s_primal_ctx_splatBlobs_0(uint2 dispatchThreadID_2, int2 dispatchSize_0, 
 // #line 814
     InitializedShortList_0 sList_1 = initShortList_0(dispatchThreadID_2);
 
-    uint2 localID_0 = dispatchThreadID_2 % _S420;
+    uint2 localID_0 = dispatchThreadID_2 % _S421;
     uint localIdx_11 = uint(int(localID_0.x) + int(localID_0.y) * int(16));
 
 
@@ -3914,25 +3915,34 @@ float4 s_primal_ctx_splatBlobs_0(uint2 dispatchThreadID_2, int2 dispatchSize_0, 
     _s_diff_ctx_18.sortedList_0 = sortedList_1;
 
 // #line 826
-    float4 _S421 = s_primal_ctx_fineRasterize_0(sortedList_1, localIdx_11, uv_7);
+    float4 _S422 = s_primal_ctx_fineRasterize_0(sortedList_1, localIdx_11, uv_7);
 
 // #line 826
-    _s_diff_ctx_18._S408 = _S421;
+    _s_diff_ctx_18._S408 = _S422;
 
 // #line 832
-    float _S422 = _S421.w;
+    float _S423 = _S422.w;
 
 // #line 832
-    return float4(_S421.xyz * (1.0 - _S422) + _S422, 1.0);
+    return float4(_S422.xyz * (1.0 - _S423) + _S423, 1.0);
 }
 
 
 // #line 832
-float s_primal_ctx_dot_0(float3 _S423, float3 _S424)
+float4 s_primal_ctx_pow_0(float4 _S424, float4 _S425)
 {
 
 // #line 832
-    return dot(_S423, _S424);
+    return pow(_S424, _S425);
+}
+
+
+// #line 832
+float s_primal_ctx_dot_0(float3 _S426, float3 _S427)
+{
+
+// #line 832
+    return dot(_S426, _S427);
 }
 
 
@@ -3941,45 +3951,46 @@ float s_primal_ctx_loss_0(uint2 dispatchThreadID_3, int2 imageSize_1, out s_bwd_
 {
 
 // #line 840
-    SortedShortList_0 _S425 = { int(0) };
+    SortedShortList_0 _S428 = { int(0) };
 
 // #line 840
-    float4 _S426 = (float4)0.0;
+    float4 _S429 = (float4)0.0;
 
 // #line 840
-    s_bwd_prop_splatBlobs_Intermediates_0 _S427 = { (float2)0.0, _S425, _S426 };
+    s_bwd_prop_splatBlobs_Intermediates_0 _S430 = { (float2)0.0, _S428, _S429 };
 
 // #line 840
-    _s_diff_ctx_19._S409 = _S427;
+    _s_diff_ctx_19._S409 = _S430;
 
 // #line 840
-    _s_diff_ctx_19._S410 = _S426;
+    _s_diff_ctx_19._S410 = _S429;
 
 // #line 840
-    _s_diff_ctx_19._S411 = _S426;
+    _s_diff_ctx_19._S411 = _S429;
 
-// #line 854
-    _s_diff_ctx_19._S410 = _S426;
+// #line 840
+    _s_diff_ctx_19._S412 = _S429;
+
+// #line 855
+    _s_diff_ctx_19._S410 = _S429;
+    _s_diff_ctx_19._S411 = _S429;
 
 // #line 843
-    float4 _S428 = s_primal_ctx_splatBlobs_0(dispatchThreadID_3, imageSize_1, _s_diff_ctx_19._S409);
+    float4 _S431 = s_primal_ctx_splatBlobs_0(dispatchThreadID_3, imageSize_1, _s_diff_ctx_19._S409);
 
 // #line 843
-    _s_diff_ctx_19._S411 = _S428;
+    _s_diff_ctx_19._S412 = _S431;
+
+// #line 843
+    bool _S432;
 
 
 
-    uint _S429 = dispatchThreadID_3.x;
-
-// #line 847
-    bool _S430;
-
-// #line 847
-    if(int(_S429) >= imageSize_1.x)
+    if(int(dispatchThreadID_3.x) >= imageSize_1.x)
     {
 
 // #line 847
-        _S430 = true;
+        _S432 = true;
 
 // #line 847
     }
@@ -3987,64 +3998,68 @@ float s_primal_ctx_loss_0(uint2 dispatchThreadID_3, int2 imageSize_1, out s_bwd_
     {
 
 // #line 847
-        _S430 = int(dispatchThreadID_3.y) >= imageSize_1.y;
+        _S432 = int(dispatchThreadID_3.y) >= imageSize_1.y;
 
 // #line 847
     }
 
 // #line 847
-    float _S431;
+    float _S433;
 
 // #line 847
-    if(_S430)
+    if(_S432)
     {
 
 // #line 847
-        _S431 = 0.0;
+        _S433 = 0.0;
 
 // #line 847
     }
     else
     {
 
-// #line 854
-        float4 targetColor_0 = targetTexture_0[uint2(_S429, uint(imageSize_1.y - int(dispatchThreadID_3.y)))];
+// #line 855
+        float4 targetColor_0 = targetTexture_0[dispatchThreadID_3.xy];
 
-// #line 854
+// #line 855
         _s_diff_ctx_19._S410 = targetColor_0;
-        float3 _S432 = _S428.xyz - targetColor_0.xyz;
 
 // #line 855
-        _S431 = s_primal_ctx_dot_0(_S432, _S432);
+        float4 _S434 = s_primal_ctx_pow_0(targetColor_0, (float4)0.45454543828964233);
+        _s_diff_ctx_19._S411 = _S434;
+        float3 _S435 = _S431.xyz - _S434.xyz;
 
-// #line 855
+// #line 857
+        _S433 = s_primal_ctx_dot_0(_S435, _S435);
+
+// #line 857
     }
 
-// #line 855
-    return _S431;
+// #line 857
+    return _S433;
 }
 
 
-// #line 855
-void s_bwd_prop_dot_0(inout DiffPair_vectorx3Cfloatx2C3x3E_0 _S433, inout DiffPair_vectorx3Cfloatx2C3x3E_0 _S434, float _S435)
+// #line 857
+void s_bwd_prop_dot_0(inout DiffPair_vectorx3Cfloatx2C3x3E_0 _S436, inout DiffPair_vectorx3Cfloatx2C3x3E_0 _S437, float _S438)
 {
 
-// #line 855
-    _d_dot_0(_S433, _S434, _S435);
+// #line 857
+    _d_dot_0(_S436, _S437, _S438);
 
-// #line 855
+// #line 857
     return;
 }
 
 
-// #line 855
-void s_bwd_prop_fineRasterize_0(SortedShortList_0 _S436, uint _S437, float2 _S438, float4 _S439)
+// #line 857
+void s_bwd_prop_fineRasterize_0(SortedShortList_0 _S439, uint _S440, float2 _S441, float4 _S442)
 {
 
-// #line 855
-    fineRasterize_bwd_0(_S436, _S437, _S438, _S439);
+// #line 857
+    fineRasterize_bwd_0(_S439, _S440, _S441, _S442);
 
-// #line 855
+// #line 857
     return;
 }
 
@@ -4054,23 +4069,23 @@ void s_bwd_prop_splatBlobs_0(uint2 dispatchThreadID_4, int2 dispatchSize_1, floa
 {
 
 // #line 787
-    int _S440 = int(0);
+    int _S443 = int(0);
 
 // #line 787
-    int _S441 = int(0);
+    int _S444 = int(0);
 
 // #line 787
-    targetTexture_0.GetDimensions(_S440, _S441);
-    int2 texSize_1 = int2(_S440, _S441);
+    targetTexture_0.GetDimensions(_S443, _S444);
+    int2 texSize_1 = int2(_S443, _S444);
 
 // #line 798
     uint2 tileCoords_1 = uint2(uint(int(dispatchThreadID_4.x) / int(16)), uint(int(dispatchThreadID_4.y) / int(16)));
 
-    uint2 _S442 = uint2(16U, 16U);
+    uint2 _S445 = uint2(16U, 16U);
 
 // #line 800
-    float2 tileLow_1 = calcUV_0(tileCoords_1 * _S442, dispatchSize_1, texSize_1);
-    float2 tileHigh_1 = calcUV_0((tileCoords_1 + 1U) * _S442, dispatchSize_1, texSize_1);
+    float2 tileLow_1 = calcUV_0(tileCoords_1 * _S445, dispatchSize_1, texSize_1);
+    float2 tileHigh_1 = calcUV_0((tileCoords_1 + 1U) * _S445, dispatchSize_1, texSize_1);
 
 // #line 807
     OBB_0 tileBounds_2 = OBB_x24init_0((tileLow_1 + tileHigh_1) / 2.0, float2x2(1.0, 0.0, 0.0, 1.0), (tileHigh_1 - tileLow_1) / 2.0);
@@ -4078,7 +4093,7 @@ void s_bwd_prop_splatBlobs_0(uint2 dispatchThreadID_4, int2 dispatchSize_1, floa
 // #line 814
     InitializedShortList_0 sList_2 = initShortList_0(dispatchThreadID_4);
 
-    uint2 localID_1 = dispatchThreadID_4 % _S442;
+    uint2 localID_1 = dispatchThreadID_4 % _S445;
     uint localIdx_12 = uint(int(localID_1.x) + int(localID_1.y) * int(16));
 
 
@@ -4088,16 +4103,16 @@ void s_bwd_prop_splatBlobs_0(uint2 dispatchThreadID_4, int2 dispatchSize_1, floa
     PaddedShortList_0 paddedSList_1 = padBuffer_0(filledSList_1, localIdx_12);
 
 // #line 832
-    float3 _S443 = _s_dOut_11.xyz;
+    float3 _S446 = _s_dOut_11.xyz;
 
 // #line 832
-    float3 _S444 = _s_diff_ctx_20._S408.xyz * _S443;
+    float3 _S447 = _s_diff_ctx_20._S408.xyz * _S446;
 
 // #line 832
-    float3 _S445 = (float3)(1.0 - _s_diff_ctx_20._S408.w) * _S443;
+    float3 _S448 = (float3)(1.0 - _s_diff_ctx_20._S408.w) * _S446;
 
 // #line 832
-    s_bwd_prop_fineRasterize_0(_s_diff_ctx_20.sortedList_0, localIdx_12, _s_diff_ctx_20.uv_6, float4(_S445[int(0)], _S445[int(1)], _S445[int(2)], - (_S444[int(0)] + _S444[int(1)] + _S444[int(2)]) + _S443[int(0)] + _S443[int(1)] + _S443[int(2)]));
+    s_bwd_prop_fineRasterize_0(_s_diff_ctx_20.sortedList_0, localIdx_12, _s_diff_ctx_20.uv_6, float4(_S448[int(0)], _S448[int(1)], _S448[int(2)], - (_S447[int(0)] + _S447[int(1)] + _S447[int(2)]) + _S446[int(0)] + _S446[int(1)] + _S446[int(2)]));
 
 // #line 781
     return;
@@ -4108,18 +4123,18 @@ void s_bwd_prop_splatBlobs_0(uint2 dispatchThreadID_4, int2 dispatchSize_1, floa
 void s_bwd_prop_loss_0(uint2 dispatchThreadID_5, int2 imageSize_2, float _s_dOut_12, s_bwd_prop_loss_Intermediates_0 _s_diff_ctx_21)
 {
 
-// #line 855
-    float3 _S446 = (float3)0.0;
+// #line 857
+    float3 _S449 = (float3)0.0;
 
-// #line 855
-    bool _S447;
+// #line 857
+    bool _S450;
 
 // #line 847
     if(int(dispatchThreadID_5.x) >= imageSize_2.x)
     {
 
 // #line 847
-        _S447 = true;
+        _S450 = true;
 
 // #line 847
     }
@@ -4127,20 +4142,20 @@ void s_bwd_prop_loss_0(uint2 dispatchThreadID_5, int2 imageSize_2, float _s_dOut
     {
 
 // #line 847
-        _S447 = int(dispatchThreadID_5.y) >= imageSize_2.y;
+        _S450 = int(dispatchThreadID_5.y) >= imageSize_2.y;
 
 // #line 847
     }
 
 // #line 847
-    float3 _S448;
+    float3 _S451;
 
 // #line 847
-    if(_S447)
+    if(_S450)
     {
 
 // #line 847
-        _S448 = _S446;
+        _S451 = _S449;
 
 // #line 847
     }
@@ -4148,61 +4163,61 @@ void s_bwd_prop_loss_0(uint2 dispatchThreadID_5, int2 imageSize_2, float _s_dOut
     {
 
 // #line 847
-        _S448 = _s_diff_ctx_21._S411.xyz - _s_diff_ctx_21._S410.xyz;
+        _S451 = _s_diff_ctx_21._S412.xyz - _s_diff_ctx_21._S411.xyz;
 
 // #line 847
     }
 
 // #line 843
-    float4 _S449 = (float4)0.0;
+    float4 _S452 = (float4)0.0;
 
 // #line 843
-    float4 _S450;
+    float4 _S453;
 
 // #line 843
-    if(_S447)
+    if(_S450)
     {
 
 // #line 843
-        _S450 = _S449;
+        _S453 = _S452;
 
 // #line 843
     }
     else
     {
 
-// #line 855
-        DiffPair_vectorx3Cfloatx2C3x3E_0 _S451;
+// #line 857
+        DiffPair_vectorx3Cfloatx2C3x3E_0 _S454;
 
-// #line 855
-        _S451.primal_0 = _S448;
+// #line 857
+        _S454.primal_0 = _S451;
 
-// #line 855
-        _S451.differential_0 = _S446;
+// #line 857
+        _S454.differential_0 = _S449;
 
-// #line 855
-        DiffPair_vectorx3Cfloatx2C3x3E_0 _S452;
+// #line 857
+        DiffPair_vectorx3Cfloatx2C3x3E_0 _S455;
 
-// #line 855
-        _S452.primal_0 = _S448;
+// #line 857
+        _S455.primal_0 = _S451;
 
-// #line 855
-        _S452.differential_0 = _S446;
+// #line 857
+        _S455.differential_0 = _S449;
 
-// #line 855
-        s_bwd_prop_dot_0(_S451, _S452, _s_dOut_12);
+// #line 857
+        s_bwd_prop_dot_0(_S454, _S455, _s_dOut_12);
 
-// #line 855
-        float3 _S453 = _S452.differential_0 + _S451.differential_0;
+// #line 857
+        float3 _S456 = _S455.differential_0 + _S454.differential_0;
 
-// #line 855
-        _S450 = float4(_S453[int(0)], _S453[int(1)], _S453[int(2)], 0.0);
+// #line 857
+        _S453 = float4(_S456[int(0)], _S456[int(1)], _S456[int(2)], 0.0);
 
-// #line 855
+// #line 857
     }
 
 // #line 843
-    s_bwd_prop_splatBlobs_0(dispatchThreadID_5, imageSize_2, _S450, _s_diff_ctx_21._S409);
+    s_bwd_prop_splatBlobs_0(dispatchThreadID_5, imageSize_2, _S453, _s_diff_ctx_21._S409);
 
 // #line 840
     return;
@@ -4210,40 +4225,40 @@ void s_bwd_prop_loss_0(uint2 dispatchThreadID_5, int2 imageSize_2, float _s_dOut
 
 
 // #line 840
-void s_bwd_loss_0(uint2 _S454, int2 _S455, float _S456)
+void s_bwd_loss_0(uint2 _S457, int2 _S458, float _S459)
 {
 
 // #line 840
-    s_bwd_prop_loss_Intermediates_0 _S457;
+    s_bwd_prop_loss_Intermediates_0 _S460;
 
 // #line 840
-    float _S458 = s_primal_ctx_loss_0(_S454, _S455, _S457);
+    float _S461 = s_primal_ctx_loss_0(_S457, _S458, _S460);
 
 // #line 840
-    s_bwd_prop_loss_0(_S454, _S455, _S456, _S457);
+    s_bwd_prop_loss_0(_S457, _S458, _S459, _S460);
 
 // #line 840
     return;
 }
 
 
-// #line 882
+// #line 884
 [shader("compute")][numthreads(16, 16, 1)]
 void computeDerivativesMain(uint2 dispatchThreadID_6 : SV_DispatchThreadID)
 {
 
-// #line 884
+// #line 886
     uint dimX_0;
     uint dimY_0;
     targetTexture_0.GetDimensions(dimX_0, dimY_0);
 
-    int _S459 = int(dimX_0);
+    int _S462 = int(dimX_0);
 
-// #line 888
-    int _S460 = int(dimY_0);
+// #line 890
+    int _S463 = int(dimY_0);
 
-// #line 894
-    s_bwd_loss_0(dispatchThreadID_6, int2(_S459, _S460), 1.0 / float(_S459 * _S460));
+// #line 896
+    s_bwd_loss_0(dispatchThreadID_6, int2(_S462, _S463), 1.0 / float(_S462 * _S463));
     return;
 }
 

@@ -21,18 +21,18 @@ Texture2D<float4 > targetTexture_0 : register(t0);
 RWStructuredBuffer<float > blobsBuffer_0 : register(u0);
 
 
-// #line 955
+// #line 956
 RWTexture2D<float4 > result_0 : register(u4);
 
 
-// #line 962
+// #line 963
 // struct GlobalParams_0
 // {
     float4 U_ScreenSize_0;
 // };
 
 
-// #line 962
+// #line 963
 // cbuffer globalParams_0 : register(b0)
 // {
 //     GlobalParams_0 globalParams_0;
@@ -992,18 +992,18 @@ float4 splatBlobs_0(uint2 dispatchThreadID_2, int2 dispatchSize_0)
 }
 
 
-// #line 960
-[shader("compute")][numthreads(32, 32, 1)]
+// #line 961
+[shader("compute")][numthreads(16, 16, 1)]
 void imageMain(uint3 threadId_0 : SV_DispatchThreadID)
 {
 
-// #line 962
+// #line 963
     uint2 _S40 = threadId_0.xy;
 
-// #line 962
+// #line 963
     float4 _S41 = splatBlobs_0(_S40, int2(U_ScreenSize_0.xy));
 
-// #line 962
+// #line 963
     result_0[_S40] = _S41;
     return;
 }

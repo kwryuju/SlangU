@@ -27,34 +27,34 @@ RWStructuredBuffer<float > adamSecondMoment_0 : register(u3);
 RWStructuredBuffer<float > blobsBuffer_0 : register(u0);
 
 
-// #line 910
+// #line 911
 [shader("compute")][numthreads(256, 1, 1)]
 void updateBlobsMain(uint2 dispatchThreadID_0 : SV_DispatchThreadID)
 {
 
-// #line 912
+// #line 913
     uint globalID_0 = dispatchThreadID_0.x;
     if(int(globalID_0) >= int(184320))
     {
 
-// #line 914
+// #line 915
         return;
     }
 
     uint _S1 = derivBuffer_0[globalID_0];
 
-// #line 917
+// #line 918
     float g_t_0 = asfloat(_S1);
     derivBuffer_0[globalID_0] = asuint(0.0);
 
-// #line 929
+// #line 930
     float m_t_0 = 0.89999997615814209 * adamFirstMoment_0[globalID_0] + 0.10000002384185791 * g_t_0;
     float v_t_0 = 0.99900001287460327 * adamSecondMoment_0[globalID_0] + 0.00099998712539673 * (g_t_0 * g_t_0);
 
     adamFirstMoment_0[globalID_0] = m_t_0;
     adamSecondMoment_0[globalID_0] = v_t_0;
 
-// #line 940
+// #line 941
     blobsBuffer_0[globalID_0] = blobsBuffer_0[globalID_0] - 0.0020000000949949 / (sqrt(v_t_0 / 0.00099998712539673) + 9.99999993922529029e-09) * (m_t_0 / 0.10000002384185791);
     return;
 }
